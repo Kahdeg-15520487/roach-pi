@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.16.0](https://github.com/tmdgusya/roach-pi/compare/v1.15.0...v1.16.0) (2026-05-01)
+
+### Features
+
+* add English system instructions for clarification priority ([21910f3](https://github.com/tmdgusya/roach-pi/commit/21910f3415f597c34813c9b4954efaf52f21c56b))
+
 ## [1.15.0](https://github.com/tmdgusya/roach-pi/compare/v1.14.1...v1.15.0) (2026-05-01)
 
 ### Features
