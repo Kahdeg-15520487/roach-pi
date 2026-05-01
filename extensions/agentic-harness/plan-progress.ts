@@ -132,6 +132,18 @@ export class PlanProgressTracker {
     }
   }
 
+  startTaskById(taskId: number): number | null {
+    const task = this.tasks.find((t) => t.id === taskId);
+    if (!task) return null;
+    if (task.status === "running") return task.id;
+    if (task.status !== "pending") return null;
+
+    task.status = "running";
+    task.startedAt = Date.now();
+    this.notifyChanged();
+    return task.id;
+  }
+
   startTaskByMatch(text: string): number | null {
     if (!this.hasPlan()) return null;
 

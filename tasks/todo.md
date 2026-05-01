@@ -257,3 +257,41 @@ Done when:
 - Fix applied: added a small `stringEnum()` schema helper in `extensions/agentic-harness/index.ts` that preserves the existing `{ type: "string", enum: [...] }` JSON schema while giving TypeScript the intended literal-union static type.
 - Guard coverage confirmed: `tests/extension.test.ts` verifies the documented team tool parameter schema still exposes `type: "string"` and `enum` values.
 - Verification: PASS — `npm ci && cd extensions/agentic-harness && npm ci && npm test && npm run build` (37 files, 370 tests).
+
+
+## Task: PlanProgress tracking for compliance/worker/validator stages
+
+### Problem
+TaskProgress missed plan-validator/plan-compliance task updates when subagent calls identified the plan task with `planTaskId` instead of descriptive task text.
+
+### Root cause
+`extensions/agentic-harness/plan-progress-events.ts` ignored deterministic `planTaskId` fields and relied on fuzzy task-text matching. Validator/compliance prompts often contain generic text like `validate`, so matching failed and no `toolCallId -> taskId` mapping was stored.
+
+### Desired behavior
+- `plan-compliance`, `plan-worker`, and `plan-validator` stages all appear in the same TaskProgress task lifecycle.
+- A task becomes `running` when any stage for that task starts.
+- Successful `plan-compliance`/`plan-worker` completion keeps the task running.
+- Successful `plan-validator` completion marks the task completed.
+- Any failed stage marks the task failed.
+
+### Plan
+- [x] Add regression tests proving `planTaskId`-only subagent calls are tracked.
+- [x] Add stage-aware completion tests for compliance/worker/validator lifecycle.
+- [x] Update plan progress event matching to prefer deterministic `planTaskId` before fuzzy text matching.
+- [x] Update completion semantics so compliance/worker success keeps the task running, validator success completes it, and any failure fails it.
+- [x] Verify focused failure guard fails before the fix.
+- [x] Run focused tests after the fix.
+- [x] Run TypeScript build after the fix.
+- [x] Run full harness regression.
+- [x] Check repository diff for unintended changes.
+
+### Review
+- Reproduced the bug with a failing plan-progress event test: `plan-validator` + `task: "validate"` + `planTaskId: 1` returned no matched task before the fix.
+- Added deterministic `startTaskById(...)` handling while preserving existing fuzzy text matching fallback.
+- Changed stage semantics so worker/compliance success does not prematurely complete the task; validator success completes it; any failed stage fails it.
+- Verification passed:
+  - `cd extensions/agentic-harness && npm test -- --run tests/plan-progress-events.test.ts --reporter verbose`
+  - `cd extensions/agentic-harness && npm test -- --run tests/plan-progress-events.test.ts tests/plan-progress.test.ts --reporter verbose`
+  - `cd extensions/agentic-harness && npm run build`
+  - `cd extensions/agentic-harness && npm test` (39 files, 432 tests)
+  - `git diff --check`

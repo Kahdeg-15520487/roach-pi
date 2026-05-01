@@ -209,6 +209,17 @@ function taskText(item: Record<string, unknown>): string {
   return typeof item.task === "string" ? item.task : "";
 }
 
+function planTaskId(item: Record<string, unknown>): number | null {
+  return typeof item.planTaskId === "number" && Number.isInteger(item.planTaskId)
+    ? item.planTaskId
+    : null;
+}
+
+function shouldCompleteOnSuccess(args: unknown): boolean {
+  const items = subagentItemRecords(args);
+  return items.length > 0 && items.every((item) => item.agent === "plan-validator");
+}
+
 export function startPlanSubagentTasks(
   tracker: PlanProgressTracker,
   args: unknown,
@@ -217,7 +228,10 @@ export function startPlanSubagentTasks(
 
   const matchedIds: number[] = [];
   for (const item of subagentItemRecords(args)) {
-    const matchedId = tracker.startTaskByMatch(taskText(item));
+    const explicitTaskId = planTaskId(item);
+    const matchedId = explicitTaskId !== null
+      ? tracker.startTaskById(explicitTaskId)
+      : tracker.startTaskByMatch(taskText(item));
     if (matchedId !== null) matchedIds.push(matchedId);
   }
   return matchedIds;
@@ -231,15 +245,27 @@ export function completePlanSubagentTasks(
 ): number[] {
   if (!tracker.hasPlan()) return [];
 
+  const shouldComplete = !success || shouldCompleteOnSuccess(args);
+
   if (matchedTaskIds && matchedTaskIds.length > 0) {
-    for (const taskId of matchedTaskIds) {
-      tracker.completeTask(taskId, success);
+    if (shouldComplete) {
+      for (const taskId of matchedTaskIds) {
+        tracker.completeTask(taskId, success);
+      }
     }
     return matchedTaskIds;
   }
 
   const completedIds: number[] = [];
   for (const item of subagentItemRecords(args)) {
+    const explicitTaskId = planTaskId(item);
+    if (explicitTaskId !== null) {
+      if (shouldComplete) tracker.completeTask(explicitTaskId, success);
+      completedIds.push(explicitTaskId);
+      continue;
+    }
+
+    if (!shouldComplete) continue;
     const matchedId = tracker.completeTaskByMatch(taskText(item), success);
     if (matchedId !== null) completedIds.push(matchedId);
   }

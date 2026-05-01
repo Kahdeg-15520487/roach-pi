@@ -236,7 +236,7 @@ describe("plan progress event loading", () => {
 });
 
 describe("plan progress subagent task tracking", () => {
-  it("starts and completes one task for single-mode plan-worker args", () => {
+  it("keeps one task running after single-mode plan-worker success", () => {
     const tracker = loadTrackingPlan();
 
     const matchedIds = startPlanSubagentTasks(tracker, {
@@ -253,7 +253,7 @@ describe("plan progress subagent task tracking", () => {
     }, true, matchedIds);
 
     expect(completedIds).toEqual([1]);
-    expect(tracker.getProgress()).toMatchObject({ completed: 1, running: 0, pending: 2 });
+    expect(tracker.getProgress()).toMatchObject({ completed: 0, running: 1, pending: 2 });
   });
 
   it("uses tool_execution_start event args when no prior tool_call input was stored", () => {
@@ -289,6 +289,9 @@ describe("plan progress subagent task tracking", () => {
     expect(tracker.getProgress()).toMatchObject({ running: 2, pending: 1 });
 
     completePlanSubagentTasks(tracker, { tasks: [{ agent: "plan-worker", task: "done" }] }, true, matchedIds);
+    expect(tracker.getProgress()).toMatchObject({ completed: 0, running: 2, pending: 1 });
+
+    completePlanSubagentTasks(tracker, { tasks: [{ agent: "plan-validator", task: "done" }] }, true, matchedIds);
     expect(tracker.getProgress()).toMatchObject({ completed: 2, running: 0, pending: 1 });
   });
 
@@ -307,6 +310,9 @@ describe("plan progress subagent task tracking", () => {
     expect(tracker.getProgress()).toMatchObject({ running: 2, pending: 1 });
 
     completePlanSubagentTasks(tracker, { chain: [{ agent: "plan-worker", task: "done" }] }, true, matchedIds);
+    expect(tracker.getProgress()).toMatchObject({ completed: 0, running: 2, pending: 1 });
+
+    completePlanSubagentTasks(tracker, { chain: [{ agent: "plan-validator", task: "done" }] }, true, matchedIds);
     expect(tracker.getProgress()).toMatchObject({ completed: 2, running: 0, pending: 1 });
   });
 
@@ -338,6 +344,94 @@ describe("plan progress subagent task tracking", () => {
     completePlanSubagentTasks(tracker, {
       agent: "plan-worker",
       task: "failure output did not mention the task",
+    }, false, matchedIds);
+
+    expect(tracker.getProgress()).toMatchObject({ failed: 1, running: 0, pending: 2 });
+  });
+
+  it("starts a task from planTaskId when validator task text is generic", () => {
+    const tracker = loadTrackingPlan();
+
+    const matchedIds = startPlanSubagentTasks(tracker, {
+      agent: "plan-validator",
+      task: "validate",
+      planFile: PLAN_PATH,
+      planTaskId: 1,
+    });
+
+    expect(matchedIds).toEqual([1]);
+    expect(tracker.getProgress()).toMatchObject({ running: 1, pending: 2 });
+  });
+
+  it("keeps tasks running through compliance and worker success, then completes on validator success", () => {
+    const tracker = loadTrackingPlan();
+
+    const complianceIds = startPlanSubagentTasks(tracker, {
+      agent: "plan-compliance",
+      task: "check compliance",
+      planFile: PLAN_PATH,
+      planTaskId: 1,
+    });
+    expect(complianceIds).toEqual([1]);
+    expect(tracker.getProgress()).toMatchObject({ running: 1, completed: 0, pending: 2 });
+
+    completePlanSubagentTasks(tracker, {
+      agent: "plan-compliance",
+      task: "check compliance",
+      planFile: PLAN_PATH,
+      planTaskId: 1,
+    }, true, complianceIds);
+    expect(tracker.getProgress()).toMatchObject({ running: 1, completed: 0, pending: 2 });
+
+    const workerIds = startPlanSubagentTasks(tracker, {
+      agent: "plan-worker",
+      task: "implement task",
+      planFile: PLAN_PATH,
+      planTaskId: 1,
+    });
+    expect(workerIds).toEqual([1]);
+
+    completePlanSubagentTasks(tracker, {
+      agent: "plan-worker",
+      task: "implement task",
+      planFile: PLAN_PATH,
+      planTaskId: 1,
+    }, true, workerIds);
+    expect(tracker.getProgress()).toMatchObject({ running: 1, completed: 0, pending: 2 });
+
+    const validatorIds = startPlanSubagentTasks(tracker, {
+      agent: "plan-validator",
+      task: "validate",
+      planFile: PLAN_PATH,
+      planTaskId: 1,
+    });
+    expect(validatorIds).toEqual([1]);
+
+    completePlanSubagentTasks(tracker, {
+      agent: "plan-validator",
+      task: "validate",
+      planFile: PLAN_PATH,
+      planTaskId: 1,
+    }, true, validatorIds);
+    expect(tracker.getProgress()).toMatchObject({ completed: 1, running: 0, pending: 2 });
+  });
+
+  it("marks a task failed when any plan stage with planTaskId fails", () => {
+    const tracker = loadTrackingPlan();
+    const matchedIds = startPlanSubagentTasks(tracker, {
+      agent: "plan-compliance",
+      task: "check compliance",
+      planFile: PLAN_PATH,
+      planTaskId: 2,
+    });
+
+    expect(matchedIds).toEqual([2]);
+
+    completePlanSubagentTasks(tracker, {
+      agent: "plan-compliance",
+      task: "check compliance",
+      planFile: PLAN_PATH,
+      planTaskId: 2,
     }, false, matchedIds);
 
     expect(tracker.getProgress()).toMatchObject({ failed: 1, running: 0, pending: 2 });
