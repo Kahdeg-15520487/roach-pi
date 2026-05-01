@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.18.1](https://github.com/tmdgusya/roach-pi/compare/v1.18.0...v1.18.1) (2026-05-01)
+
+### Bug Fixes
+
+* track plan progress by task id ([6a22c41](https://github.com/tmdgusya/roach-pi/commit/6a22c410750e160d9c79a7b27d46b6909b14c4d7))
+
 ## [1.18.0](https://github.com/tmdgusya/roach-pi/compare/v1.17.0...v1.18.0) (2026-05-01)
 
 ### Features
