@@ -49,6 +49,16 @@ Minimum: 1 second. Maximum: 365 days.
 - **Timeout-protected**: Jobs timeout at `max(interval × 2, 60s)`.
 - **Cooperative cancellation**: Uses `AbortController` per job.
 
+## pi v0.72 Agent Loop Note
+
+pi `0.72.x` added `shouldStopAfterTurn` to the low-level `@mariozechner/pi-agent-core` loop configuration. `session-loop` does not call `agentLoop()` directly; it schedules recurring prompts through the public ExtensionAPI:
+
+```ts
+pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+```
+
+Because `shouldStopAfterTurn` is not exposed on `ExtensionAPI`, `ExtensionContext`, or `ExtensionCommandContext`, this extension cannot pass that callback into the active pi agent loop. `/loop-stop` and `/loop-stop-all` remain cooperative scheduler controls, and session shutdown still aborts active jobs through each job's `AbortController`.
+
 ## Development
 
 ```bash

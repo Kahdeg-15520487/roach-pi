@@ -34,6 +34,18 @@ The extension registers the skill paths automatically via `resources_discover`, 
 By default this is compatibility behavior: non-conflicting user skills remain available.
 For colliding skill names, precedence follows discovery order.
 
+## pi v0.72 Compatibility Notes
+
+This extension targets pi `0.72.x` and remains provider-agnostic. It does not register custom model providers itself.
+
+For users or downstream extensions that add custom providers with `pi.registerProvider()` or `~/.pi/agent/models.json`:
+
+- Use model-level `thinkingLevelMap` for pi thinking levels (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). Do not use the removed `compat.reasoningEffortMap` shape.
+- Use `null` values in `thinkingLevelMap` for thinking levels a model should hide and skip while cycling.
+- Per-model `baseUrl` overrides are honored by pi `0.72.x`, so provider-wide proxies and model-specific endpoints can coexist.
+
+Team-mode thinking-level UI is intentionally not part of this extension's default path. Team mode remains gated behind `PI_ENABLE_TEAM_MODE=1`.
+
 ## Installation
 
 ```bash
