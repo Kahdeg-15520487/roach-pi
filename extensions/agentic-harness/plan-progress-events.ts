@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { isAbsolute, resolve } from "path";
 import { parsePlan } from "./plan-parser.js";
-import type { PlanProgressTracker } from "./plan-progress.js";
+import type { PlanProgressTracker, TaskStatus } from "./plan-progress.js";
 
 export type PlanLoadOptions = {
   text?: string;
@@ -257,15 +257,46 @@ function getMessageFromEntry(entry: unknown): unknown {
   return record.message;
 }
 
+const PLAN_PROGRESS_CUSTOM_TYPE = "plan-progress";
+
+type TaskStatusSnapshot = { id: number; status: string };
+
+function extractCustomEntrySnapshot(entry: unknown): TaskStatusSnapshot[] | null {
+  if (!entry || typeof entry !== "object") return null;
+  const record = entry as { type?: unknown; customType?: unknown; data?: unknown };
+  if (record.type !== "custom" || record.customType !== PLAN_PROGRESS_CUSTOM_TYPE) return null;
+  if (!record.data || typeof record.data !== "object") return null;
+  const data = record.data as { taskStatuses?: unknown };
+  if (!Array.isArray(data.taskStatuses)) return null;
+  return data.taskStatuses as TaskStatusSnapshot[];
+}
+
 export async function reconstructPlanProgressFromSessionEntries(
   tracker: PlanProgressTracker,
   entries: unknown[],
   cwd?: string,
   sessionPlanPaths: Set<string> = new Set<string>(),
 ): Promise<void> {
+  let lastSnapshot: TaskStatusSnapshot[] | null = null;
+  let lastSnapshotIndex = -1;
+
+  for (let i = 0; i < entries.length; i++) {
+    const snapshot = extractCustomEntrySnapshot(entries[i]);
+    if (snapshot) {
+      lastSnapshot = snapshot;
+      lastSnapshotIndex = i;
+    }
+  }
+
   const toolCallArgsById = new Map<string, Record<string, unknown>>();
 
-  for (const entry of entries) {
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+
+    if (i === lastSnapshotIndex && lastSnapshot) {
+      continue;
+    }
+
     const message = getMessageFromEntry(entry);
     if (!message || typeof message !== "object") continue;
 
@@ -273,6 +304,10 @@ export async function reconstructPlanProgressFromSessionEntries(
 
     if (role === "assistant") {
       await loadPlanFromAssistantMessageEnd(tracker, { message }, cwd, sessionPlanPaths);
+      if (i > lastSnapshotIndex && lastSnapshot) {
+        tracker.restoreTaskStatuses(lastSnapshot as Array<{ id: number; status: TaskStatus }>);
+        lastSnapshot = null;
+      }
       for (const call of extractAssistantToolCalls(message)) {
         toolCallArgsById.set(call.id, call.args);
       }
@@ -307,6 +342,8 @@ export async function reconstructPlanProgressFromSessionEntries(
 
     toolCallArgsById.delete(toolCallId);
   }
+
+  tracker.demoteRunningToPending();
 }
 
 export async function reloadPlanFromSubagentArgs(
@@ -360,6 +397,18 @@ function shouldCompleteOnSuccess(args: unknown): boolean {
   return items.some((item) => item.agent === "plan-validator");
 }
 
+function itemsForCompletion(
+  args: unknown,
+  matchedTaskIds: number[],
+): Record<string, unknown>[] {
+  const items = subagentItemRecords(args);
+  const matchedSet = new Set(matchedTaskIds);
+  return items.filter((item) => {
+    const tid = planTaskId(item);
+    return tid === null || matchedSet.has(tid);
+  });
+}
+
 export function startPlanSubagentTasks(
   tracker: PlanProgressTracker,
   args: unknown,
@@ -397,7 +446,7 @@ export function completePlanSubagentTasks(
   }
 
   const completedIds: number[] = [];
-  for (const item of subagentItemRecords(args)) {
+  for (const item of itemsForCompletion(args, matchedTaskIds ?? [])) {
     const explicitTaskId = planTaskId(item);
     if (explicitTaskId !== null) {
       if (shouldComplete) tracker.completeTask(explicitTaskId, success);

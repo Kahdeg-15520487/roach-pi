@@ -486,6 +486,26 @@ describe("plan progress subagent task tracking", () => {
     expect(tracker.getProgress()).toMatchObject({ completed: 1, running: 0, pending: 2 });
   });
 
+  it("does not over-complete unrelated tasks when chain items have different planTaskIds", () => {
+    const tracker = loadTrackingPlan();
+
+    const args = {
+      chain: [
+        { agent: "plan-worker", task: "Task 1", planFile: PLAN_PATH, planTaskId: 1 },
+        { agent: "plan-validator", task: "validate", planFile: PLAN_PATH, planTaskId: 2 },
+      ],
+    };
+
+    const matchedIds = startPlanSubagentTasks(tracker, args);
+
+    expect(matchedIds).toEqual([1, 2]);
+    expect(tracker.getProgress()).toMatchObject({ running: 2, pending: 1 });
+
+    completePlanSubagentTasks(tracker, args, true, matchedIds);
+
+    expect(tracker.getProgress()).toMatchObject({ completed: 2, running: 0, pending: 1 });
+  });
+
   it("marks a task failed when any plan stage with planTaskId fails", () => {
     const tracker = loadTrackingPlan();
     const matchedIds = startPlanSubagentTasks(tracker, {
@@ -560,6 +580,70 @@ describe("plan progress session-entry reconstruction", () => {
 
     expect(tracker.hasPlan()).toBe(true);
     expect(tracker.getGoal()).toBe("Loaded from replayed write");
+  });
+});
+
+describe("plan progress CustomEntry snapshot replay", () => {
+  const CUSTOM_TYPE = "plan-progress";
+
+  function snapshotEntry(statuses: Array<{ id: number; status: string }>, entryId = "snap-1"): unknown {
+    return {
+      type: "custom",
+      customType: CUSTOM_TYPE,
+      id: entryId,
+      data: { taskStatuses: statuses },
+    };
+  }
+
+  function messageEntry(message: unknown, id = `msg-${Math.random().toString(36).slice(2, 6)}`): unknown {
+    return { type: "message", id, message };
+  }
+
+  it("restores task statuses from the latest CustomEntry before replaying newer events", async () => {
+    const tracker = new PlanProgressTracker();
+
+    const entries = [
+      messageEntry({ role: "assistant", content: [{ type: "text", text: trackingPlan() }] }),
+      snapshotEntry([{ id: 1, status: "completed" }]),
+      messageEntry({
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "plan-validator", task: "Task 2", planTaskId: 2 } }],
+      }),
+      messageEntry({ role: "toolResult", toolCallId: "call-1", toolName: "subagent", content: [{ type: "text", text: "PASS" }], isError: false }),
+    ];
+
+    await reconstructPlanProgressFromSessionEntries(tracker, entries, ".");
+
+    expect(tracker.getProgress()).toMatchObject({ completed: 2, running: 0, pending: 1 });
+  });
+
+  it("demotes stuck-running tasks to pending after replay", async () => {
+    const tracker = new PlanProgressTracker();
+
+    const entries = [
+      messageEntry({ role: "assistant", content: [{ type: "text", text: trackingPlan() }] }),
+      messageEntry({
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call-1", name: "subagent", arguments: { agent: "plan-worker", task: "Task 1", planTaskId: 1 } }],
+      }),
+    ];
+
+    await reconstructPlanProgressFromSessionEntries(tracker, entries, ".");
+
+    expect(tracker.getProgress()).toMatchObject({ running: 0, pending: 3, completed: 0 });
+  });
+
+  it("ignores CustomEntries with unknown customType", async () => {
+    const tracker = new PlanProgressTracker();
+
+    const entries = [
+      messageEntry({ role: "assistant", content: [{ type: "text", text: trackingPlan() }] }),
+      { type: "custom", customType: "other-extension", id: "snap-x", data: { taskStatuses: [{ id: 1, status: "completed" }] } },
+    ];
+
+    await reconstructPlanProgressFromSessionEntries(tracker, entries, ".");
+
+    expect(tracker.getProgress()).toMatchObject({ pending: 3, running: 0, completed: 0 });
   });
 });
 
