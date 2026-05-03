@@ -56,6 +56,21 @@ const cacheStats: CacheStats = { totalInput: 0, totalCacheRead: 0 };
 const activeTools: ActiveTools = { running: new Map() };
 const planProgress = new PlanProgressTracker();
 
+const PLAN_PROGRESS_CUSTOM_TYPE = "plan-progress";
+
+function persistProgressSnapshot(ctx: { sessionManager?: any }): void {
+  if (!planProgress.hasPlan()) return;
+  ctx.sessionManager?.appendCustomEntry?.(PLAN_PROGRESS_CUSTOM_TYPE, {
+    taskStatuses: planProgress.getTaskStatuses(),
+  });
+}
+
+const MICROCOMPACTION_ENV = "PI_AGENTIC_MICROCOMPACTION";
+
+function isMicrocompactionEnabled(): boolean {
+  return process.env[MICROCOMPACTION_ENV] === "1";
+}
+
 // Track tool call arguments by toolCallId so we can correlate plan-task
 // subagent starts/completions across tool_execution_start/end events.
 const toolCallArgsById = new Map<string, Record<string, unknown>>();
@@ -1615,7 +1630,7 @@ Do not start multi-step implementation without a clear understanding of what the
     }
   });
 
-  pi.on("tool_execution_end", async (event, _ctx) => {
+  pi.on("tool_execution_end", async (event, ctx) => {
     activeTools.running.delete(event.toolCallId);
 
     if (event.toolName === "subagent") {
@@ -1623,6 +1638,9 @@ Do not start multi-step implementation without a clear understanding of what the
       if (args) {
         const matchedTaskIds = planTaskIdsByToolCallId.get(event.toolCallId);
         completePlanSubagentTasks(planProgress, args, !(event.isError ?? false), matchedTaskIds);
+        if (matchedTaskIds && matchedTaskIds.length > 0) {
+          persistProgressSnapshot(ctx);
+        }
       }
     }
 

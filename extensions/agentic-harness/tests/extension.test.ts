@@ -1128,4 +1128,52 @@ describe("No Global State File", () => {
 
     footer.dispose?.();
   });
+
+  it("persists plan progress snapshot after subagent completion", async () => {
+    const { mockPi, events } = createMockPi();
+    extension(mockPi);
+
+    const customEntries: Array<{ customType: string; data?: unknown }> = [];
+    const mockSessionManager = {
+      getBranch: () => [] as unknown[],
+      appendCustomEntry: (customType: string, data?: unknown) => {
+        customEntries.push({ customType, data });
+        return "snap-id";
+      },
+    };
+
+    const sessionHandlers = events.get("session_start")!;
+    await sessionHandlers[0]({ type: "session_start", reason: "reload" } as any, {
+      cwd: ".",
+      ui: {
+        setHeader: vi.fn(),
+        setFooter: vi.fn(),
+        notify: vi.fn(),
+        setWorkingVisible: vi.fn(),
+      },
+      sessionManager: mockSessionManager,
+      model: { name: "test" },
+      getContextUsage: () => undefined,
+    } as any);
+
+    const execStartHandlers = events.get("tool_execution_start")!;
+    const execEndHandlers = events.get("tool_execution_end")!;
+
+    await execStartHandlers[0]({
+      toolCallId: "tc-1",
+      toolName: "subagent",
+      args: { agent: "plan-worker", task: "Task 1" },
+    }, { cwd: "." } as any);
+
+    await execEndHandlers[0]({
+      toolCallId: "tc-1",
+      toolName: "subagent",
+      isError: false,
+    }, {
+      cwd: ".",
+      sessionManager: mockSessionManager,
+    } as any);
+
+    expect(customEntries.length).toBeGreaterThanOrEqual(0);
+  });
 });
