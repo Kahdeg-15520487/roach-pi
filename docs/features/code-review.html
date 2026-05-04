@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Code Review — ROACH PI</title>
+  <meta name="description" content="Deep-dive documentation for ROACH PI code review modes: /review (single-pass) and /ultrareview (multi-agent pipeline with 10 parallel reviewers).">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪳</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../style.css">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+  <!-- Language Toggle -->
+  <div class="lang-toggle" id="langToggle">
+    <button class="active" onclick="setLang('en')">EN</button>
+    <button onclick="setLang('ko')">KR</button>
+  </div>
+
+  <script>
+    function setLang(lang) {
+      if (lang === 'ko') {
+        document.body.classList.add('lang-ko');
+      } else {
+        document.body.classList.remove('lang-ko');
+      }
+      var btns = document.querySelectorAll('#langToggle button');
+      btns.forEach(function(b) { b.classList.remove('active'); });
+      document.querySelector('#langToggle button[onclick="setLang(\'' + lang + '\')"]').classList.add('active');
+    }
+  </script>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="container">
+      <ul>
+        <li><a href="../index.html">← <span data-lang="en">ROACH PI</span><span data-lang="ko">ROACH PI</span></a></li>
+        <li><a href="workspace-memory.html"><span data-lang="en">Workspace Memory</span><span data-lang="ko">워크스페이스 메모리</span></a></li>
+        <li><a href="compaction.html"><span data-lang="en">Compaction</span><span data-lang="ko">컴팩션</span></a></li>
+        <li><a href="team-mode.html"><span data-lang="en">Team Mode</span><span data-lang="ko">팀 모드</span></a></li>
+        <li><a href="code-review.html" class="active"><span data-lang="en">Code Review</span><span data-lang="ko">코드 리뷰</span></a></li>
+        <li><a href="sandboxed-bash.html"><span data-lang="en">Sandboxed Bash</span><span data-lang="ko">샌드박스 Bash</span></a></li>
+        <li><a href="worktree-isolation.html"><span data-lang="en">Worktree</span><span data-lang="ko">워크트리</span></a></li>
+        <li><a href="power-tools.html"><span data-lang="en">Power Tools</span><span data-lang="ko">파워 도구</span></a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <div class="doc-container">
+
+    <!-- Sidebar -->
+    <aside class="doc-sidebar">
+      <ul>
+        <li><a href="#overview"><span data-lang="en">Overview</span><span data-lang="ko">개요</span></a></li>
+        <li><a href="#review"><span data-lang="en">/review</span><span data-lang="ko">/review</span></a></li>
+        <li><a href="#diff-commands"><span data-lang="en">Diff Commands</span><span data-lang="ko">Diff 명령어</span></a></li>
+        <li><a href="#ultrareview"><span data-lang="en">/ultrareview</span><span data-lang="ko">/ultrareview</span></a></li>
+        <li><a href="#reviewer-roles"><span data-lang="en">Reviewer Roles</span><span data-lang="ko">리뷰어 역할</span></a></li>
+        <li><a href="#verification"><span data-lang="en">Verification</span><span data-lang="ko">검증</span></a></li>
+        <li><a href="#choosing-modes"><span data-lang="en">Choosing Modes</span><span data-lang="ko">모드 선택</span></a></li>
+      </ul>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="doc-with-sidebar doc-prose">
+
+      <!-- Overview -->
+      <section class="doc-section" id="overview">
+        <h2>
+          <span class="icon">●</span>
+          <span data-lang="en">Overview</span>
+          <span data-lang="ko">개요</span>
+        </h2>
+        <p data-lang="en">
+          ROACH PI provides two code review modes with different depth and cost trade-offs:
+        </p>
+        <p data-lang="ko">
+          ROACH PI는 깊이와 비용 트레이드오프가 다른 두 가지 코드 리뷰 모드를 제공합니다:
+        </p>
+        <ul>
+          <li>
+            <code>/review</code> —
+            <span data-lang="en">single-pass review performed directly by the current agent. Fast, lightweight, no subagent overhead.</span>
+            <span data-lang="ko">현재 에이전트가 직접 수행하는 단일 패스 리뷰. 빠르고 가벼우며 서브에이전트 오버헤드 없음.</span>
+          </li>
+          <li>
+            <code>/ultrareview</code> —
+            <span data-lang="en">multi-agent pipeline that dispatches 10 parallel reviewers, a verification pass, and a synthesis step. Thorough but slower.</span>
+            <span data-lang="ko">10개의 병렬 리뷰어, 검증 패스, 종합 단계를 디스패치하는 다중 에이전트 파이프라인. 철저하지만 느림.</span>
+          </li>
+        </ul>
+      </section>
+
+      <!-- /review -->
+      <section class="doc-section" id="review">
+        <h2>
+          <span class="icon">▶</span>
+          <code>/review</code>
+          <span data-lang="en"> — Single-Pass Review</span>
+          <span data-lang="ko"> — 단일 패스 리뷰</span>
+        </h2>
+
+        <h3>
+          <span data-lang="en">Syntax</span>
+          <span data-lang="ko">구문</span>
+        </h3>
+        <div class="doc-code">
+          /review [target]
+        </div>
+
+        <p data-lang="en">
+          <code>target</code> can be a <strong>PR number</strong>, <strong>PR URL</strong>, <strong>branch name</strong>, or <strong>omitted</strong> for auto-detection. No confirmation is required — the review starts immediately.
+        </p>
+        <p data-lang="ko">
+          <code>target</code>은 <strong>PR 번호</strong>, <strong>PR URL</strong>, <strong>브랜치 이름</strong>, 또는 자동 감지를 위해 <strong>생략</strong>할 수 있습니다. 확인 없이 리뷰가 즉시 시작됩니다.
+        </p>
+
+        <h3>
+          <span data-lang="en">Target Validation</span>
+          <span data-lang="ko">타겟 검증</span>
+        </h3>
+        <p data-lang="en">
+          The target is validated against <code>/^[a-zA-Z0-9._/:\-]+$/</code> before any prompt is sent. Shell metacharacters (<code>;</code>, <code>|</code>, <code>&amp;</code>, <code>&gt;</code>, <code>`</code>, <code>$()</code>) are rejected immediately to prevent injection into the downstream <code>gh</code> / <code>git</code> commands.
+        </p>
+        <p data-lang="ko">
+          타겟은 프롬프트 전송 전에 <code>/^[a-zA-Z0-9._/:\-]+$/</code>로 검증됩니다. 셸 메타문자(<code>;</code>, <code>|</code>, <code>&amp;</code>, <code>&gt;</code>, <code>`</code>, <code>$()</code>)는 다운스트림 <code>gh</code> / <code>git</code> 명령어로의 인젝션을 방지하기 위해 즉시 거부됩니다.
+        </p>
+
+        <h3>
+          <span data-lang="en">Review Output</span>
+          <span data-lang="ko">리뷰 출력</span>
+        </h3>
+        <p data-lang="en">
+          The review is output directly to chat, grouped by file. Each finding includes: <strong>what</strong>, <strong>where</strong> (file:line), <strong>severity</strong> (Critical/High/Medium/Low), and a <strong>one-line suggested fix</strong>. No file is saved and no subagents are dispatched.
+        </p>
+        <p data-lang="ko">
+          리뷰는 파일별로 그룹화되어 채팅에 직접 출력됩니다. 각 발견 사항은 <strong>내용</strong>, <strong>위치</strong>(file:line), <strong>심각도</strong>(Critical/High/Medium/Low), <strong>한 줄 수정 제안</strong>을 포함합니다. 파일은 저장되지 않고 서브에이전트도 디스패치되지 않습니다.
+        </p>
+      </section>
+
+      <!-- Diff Commands -->
+      <section class="doc-section" id="diff-commands">
+        <h2>
+          <span class="icon">■</span>
+          <span data-lang="en">Diff Commands</span>
+          <span data-lang="ko">Diff 명령어</span>
+        </h2>
+
+        <p data-lang="en">Both <code>/review</code> and <code>/ultrareview</code> use the same target resolution logic:</p>
+        <p data-lang="ko"><code>/review</code>와 <code>/ultrareview</code> 모두 동일한 타겟 해결 로직을 사용합니다:</p>
+
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th><span data-lang="en">Target</span><span data-lang="ko">타겟</span></th>
+              <th><span data-lang="en">Command</span><span data-lang="ko">명령어</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span data-lang="en">PR number</span><span data-lang="ko">PR 번호</span></td>
+              <td><code>gh pr diff &lt;number&gt;</code></td>
+            </tr>
+            <tr>
+              <td><span data-lang="en">PR URL</span><span data-lang="ko">PR URL</span></td>
+              <td><code>gh pr diff &lt;url&gt;</code></td>
+            </tr>
+            <tr>
+              <td><span data-lang="en">Branch name</span><span data-lang="ko">브랜치 이름</span></td>
+              <td><code>git diff main...&lt;topic&gt;</code></td>
+            </tr>
+            <tr>
+              <td><span data-lang="en">Auto (PR found)</span><span data-lang="ko">자동 (PR 발견)</span></td>
+              <td><code>gh pr list --head &lt;branch&gt;</code> → <code>gh pr diff &lt;number&gt;</code></td>
+            </tr>
+            <tr>
+              <td><span data-lang="en">Auto (no PR)</span><span data-lang="ko">자동 (PR 없음)</span></td>
+              <td><code>git diff main...HEAD</code> + <code>git diff</code> + <code>git diff --cached</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="doc-callout doc-callout-info">
+          <div class="doc-callout-title">
+            <span data-lang="en">💡 Note</span><span data-lang="ko">💡 참고</span>
+          </div>
+          <p data-lang="en" style="margin-bottom:0">
+            <code>gh</code> accepts PR numbers and full GitHub PR URLs interchangeably — no special URL parsing is needed.
+          </p>
+          <p data-lang="ko" style="margin-bottom:0">
+            <code>gh</code>는 PR 번호와 전체 GitHub PR URL을 상호 교환적으로 허용합니다 — 별도의 URL 파싱이 필요 없습니다.
+          </p>
+        </div>
+      </section>
+
+      <!-- /ultrareview -->
+      <section class="doc-section" id="ultrareview">
+        <h2>
+          <span class="icon">★</span>
+          <code>/ultrareview</code>
+          <span data-lang="en"> — Multi-Agent Pipeline</span><span data-lang="ko"> — 다중 에이전트 파이프라인</span>
+        </h2>
+
+        <p data-lang="en">
+          The ultrareview command dispatches a <strong>3-stage pipeline</strong> with up to <strong>12 subagent invocations</strong>. A confirmation dialog is required before the pipeline starts.
+        </p>
+        <p data-lang="ko">
+          ultrareview 명령어는 최대 <strong>12개의 서브에이전트 호출</strong>로 <strong>3단계 파이프라인</strong>을 디스패치합니다. 파이프라인 시작 전 확인 대화상자가 필요합니다.
+        </p>
+
+        <h3>
+          <span data-lang="en">Stage 1: Finding (10 parallel reviewers)</span><span data-lang="ko">1단계: 발견 (10개 병렬 리뷰어)</span>
+        </h3>
+        <p data-lang="en">
+          The diff is resolved once and written to a <strong>shared artifact</strong> (e.g. <code>docs/engineering-discipline/reviews/.tmp/&lt;date&gt;-&lt;topic&gt;.diff</code>). Then <strong>10 subagents</strong> are dispatched in parallel — <strong>5 reviewer roles × 2 seeds</strong> each. Seed 2 is instructed to focus on findings seed 1 might miss.
+        </p>
+        <p data-lang="ko">
+          diff는 한 번 해결되어 <strong>공유 아티팩트</strong>(예: <code>docs/engineering-discipline/reviews/.tmp/&lt;date&gt;-&lt;topic&gt;.diff</code>)에 작성됩니다. 그 후 <strong>10개의 서브에이전트</strong>가 병렬로 디스패치됩니다 — <strong>5개 리뷰어 역할 × 시드 2개</strong>. 시드 2는 시드 1이 놓칠 수 있는 발견에 집중하도록 지시받습니다.
+        </p>
+
+        <h3>
+          <span data-lang="en">Stage 2: Verification</span><span data-lang="ko">2단계: 검증</span>
+        </h3>
+        <p data-lang="en">
+          <code>reviewer-verifier</code> is dispatched in single mode with the aggregated findings from all 10 reviewers. It deduplicates findings, filters false positives, and assigns final <strong>severity</strong> and <strong>confidence</strong> ratings.
+        </p>
+        <p data-lang="ko">
+          10개 리뷰어의 모든 집계된 발견과 함께 <code>reviewer-verifier</code>가 단일 모드로 디스패치됩니다. 발견을 중복 제거하고, 위양성을 필터링하며, 최종 <strong>심각도</strong> 및 <strong>신뢰도</strong> 등급을 부여합니다.
+        </p>
+
+        <h3>
+          <span data-lang="en">Stage 3: Synthesis</span><span data-lang="ko">3단계: 종합</span>
+        </h3>
+        <p data-lang="en">
+          <code>review-synthesis</code> is dispatched in single mode with the verified findings. It produces a structured report and saves it to <code>docs/engineering-discipline/reviews/&lt;YYYY-MM-DD&gt;-&lt;topic&gt;-review.md</code>. A 5-item top-priority summary is also streamed to chat.
+        </p>
+        <p data-lang="ko">
+          검증된 발견과 함께 <code>review-synthesis</code>가 단일 모드로 디스패치됩니다. 구조화된 리포트를 생성하고 <code>docs/engineering-discipline/reviews/&lt;YYYY-MM-DD&gt;-&lt;topic&gt;-review.md</code>에 저장합니다. 최우선 5개 항목 요약도 채팅에 스트리밍됩니다.
+        </p>
+
+        <div class="doc-callout doc-callout-warn">
+          <div class="doc-callout-title">
+            <span data-lang="en">⚠ Guard</span><span data-lang="ko">⚠ 가드</span>
+          </div>
+          <p data-lang="en" style="margin-bottom:0">
+            No agent whose name contains <code>"worker"</code> is ever dispatched in this pipeline — only <code>reviewer-*</code> and <code>review-synthesis</code> are allowed.
+          </p>
+          <p data-lang="ko" style="margin-bottom:0">
+            이 파이프라인에서는 이름에 <code>"worker"</code>가 포함된 에이전트는 디스패치되지 않습니다 — <code>reviewer-*</code>와 <code>review-synthesis</code>만 허용됩니다.
+          </p>
+        </div>
+      </section>
+
+      <!-- Reviewer Roles -->
+      <section class="doc-section" id="reviewer-roles">
+        <h2>
+          <span class="icon">■</span>
+          <span data-lang="en">Reviewer Roles</span><span data-lang="ko">리뷰어 역할</span>
+        </h2>
+
+        <p data-lang="en">Each of the 5 reviewer roles is dispatched twice (seed 1 and seed 2) for complementary coverage:</p>
+        <p data-lang="ko">5개 리뷰어 역할 각각이 상호 보완적 커버리지를 위해 두 번(시드 1과 시드 2) 디스패치됩니다:</p>
+
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th><span data-lang="en">Role</span><span data-lang="ko">역할</span></th>
+              <th><span data-lang="en">Focus</span><span data-lang="ko">집중 영역</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>reviewer-bug</code></td>
+              <td>
+                <span data-lang="en">Logic errors, boundary conditions, null/undefined, race conditions, missing error handling</span>
+                <span data-lang="ko">논리 오류, 경계 조건, null/undefined, 레이스 컨디션, 누락된 에러 핸들링</span>
+              </td>
+            </tr>
+            <tr>
+              <td><code>reviewer-security</code></td>
+              <td>
+                <span data-lang="en">Injection, auth, authorization, crypto misuse, data exposure</span>
+                <span data-lang="ko">인젝션, 인증, 인가, 암호화 오용, 데이터 노출</span>
+              </td>
+            </tr>
+            <tr>
+              <td><code>reviewer-performance</code></td>
+              <td>
+                <span data-lang="en">Algorithmic complexity, unnecessary allocations, sync I/O on hot paths, cache misses</span>
+                <span data-lang="ko">알고리즘 복잡도, 불필요한 할당, 핫 경로의 동기 I/O, 캐시 미스</span>
+              </td>
+            </tr>
+            <tr>
+              <td><code>reviewer-test-coverage</code></td>
+              <td>
+                <span data-lang="en">Missing tests, happy-path only, uncovered edge cases</span>
+                <span data-lang="ko">누락된 테스트, 해피 패스만 존재, 커버되지 않은 엣지 케이스</span>
+              </td>
+            </tr>
+            <tr>
+              <td><code>reviewer-consistency</code></td>
+              <td>
+                <span data-lang="en">Convention drift, duplication, missing reuse of existing utilities</span>
+                <span data-lang="ko">컨벤션 드리프트, 중복, 기존 유틸리티의 재사용 누락</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Verification -->
+      <section class="doc-section" id="verification">
+        <h2>
+          <span class="icon">●</span>
+          <span data-lang="en">Verification &amp; Synthesis</span><span data-lang="ko">검증 및 종합</span>
+        </h2>
+
+        <h3>
+          <code>reviewer-verifier</code>
+        </h3>
+        <p data-lang="en">
+          Receives the aggregated output from all 10 reviewers. Performs three actions:
+        </p>
+        <p data-lang="ko">
+          10개 리뷰어의 집계된 출력을 받습니다. 세 가지 작업을 수행합니다:
+        </p>
+        <ul>
+          <li>
+            <span data-lang="en"><strong>Deduplicate</strong> — removes findings reported by multiple reviewers for the same location.</span>
+            <span data-lang="ko"><strong>중복 제거</strong> — 동일한 위치에 대해 여러 리뷰어가 보고한 발견을 제거합니다.</span>
+          </li>
+          <li>
+            <span data-lang="en"><strong>Filter false positives</strong> — discards findings that don't hold against the actual codebase.</span>
+            <span data-lang="ko"><strong>위양성 필터</strong> — 실제 코드베이스에서 성립하지 않는 발견을 버립니다.</span>
+          </li>
+          <li>
+            <span data-lang="en"><strong>Attach ratings</strong> — assigns <code>severity</code> (low / medium / high / critical) and <code>confidence</code> to each surviving finding.</span>
+            <span data-lang="ko"><strong>등급 부여</strong> — 각 생존 발견에 <code>심각도</code>(low / medium / high / critical)와 <code>신뢰도</code>를 부여합니다.</span>
+          </li>
+        </ul>
+
+        <h3>
+          <code>review-synthesis</code>
+        </h3>
+        <p data-lang="en">
+          Takes the verified findings and produces the final structured review report. Writes to <code>docs/engineering-discipline/reviews/&lt;YYYY-MM-DD&gt;-&lt;topic&gt;-review.md</code>. The report includes a summary, per-file findings ranked by severity, and a top-priority list streamed to chat.
+        </p>
+        <p data-lang="ko">
+          검증된 발견을 받아 최종 구조화된 리뷰 리포트를 생성합니다. <code>docs/engineering-discipline/reviews/&lt;YYYY-MM-DD&gt;-&lt;topic&gt;-review.md</code>에 작성합니다. 리포트에는 요약, 심각도별 순위의 파일별 발견, 채팅에 스트리밍되는 최우선 목록이 포함됩니다.
+        </p>
+      </section>
+
+      <!-- Choosing Modes -->
+      <section class="doc-section" id="choosing-modes">
+        <h2>
+          <span class="icon">▶</span>
+          <span data-lang="en">Choosing Between Modes</span><span data-lang="ko">모드 선택 가이드</span>
+        </h2>
+
+        <div class="grid-2" style="margin-top: 1.5rem;">
+          <div class="card">
+            <span class="feature-icon">▶</span>
+            <div class="feature-title"><code>/review</code></div>
+            <div class="feature-desc">
+              <p data-lang="en">
+                Quick feedback on small changes. Single-pass, no subagents, instant output to chat. Ideal for PRs under ~200 lines or when you just need a second pair of eyes.
+              </p>
+              <p data-lang="ko">
+                작은 변경 사항에 대한 빠른 피드백. 단일 패스, 서브에이전트 없음, 채팅에 즉시 출력. 약 200줄 미만의 PR이나 간단한 검토가 필요할 때 적합합니다.
+              </p>
+            </div>
+          </div>
+          <div class="card">
+            <span class="feature-icon">★</span>
+            <div class="feature-title"><code>/ultrareview</code></div>
+            <div class="feature-desc">
+              <p data-lang="en">
+                Major PRs, architectural changes, or when thorough coverage is critical. 10 parallel reviewers + verification + synthesis. Takes several minutes but produces a saved, structured report.
+              </p>
+              <p data-lang="ko">
+                주요 PR, 아키텍처 변경, 철저한 커버리지가 중요할 때. 10개 병렬 리뷰어 + 검증 + 종합. 몇 분이 걸리지만 저장되는 구조화된 리포트를 생성합니다.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /.doc-with-sidebar -->
+  </div><!-- /.doc-container -->
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p>
+        <span data-lang="en">ROACH PI — Pi Engineering Discipline Extension</span>
+        <span data-lang="ko">ROACH PI — Pi 엔지니어링 디사이플린 익스텐션</span>
+      </p>
+      <p style="margin-top: 0.5rem;">
+        <span data-lang="en">Built with ■ terminal aesthetics and ● ASCII vibes</span>
+        <span data-lang="ko">■ 터미널 미학과 ● ASCII 무드로 구축</span>
+      </p>
+      <p style="margin-top: 0.5rem;">
+        <a href="https://github.com/tmdgusya/pi-engineering-discipline-extension" target="_blank">→ GitHub</a>
+      </p>
+    </div>
+  </footer>
+
+</body>
+</html>

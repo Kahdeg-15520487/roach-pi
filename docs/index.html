@@ -40,6 +40,7 @@
         <li><a href="#quickstart">▶ <span data-lang="en">Quick Start</span><span data-lang="ko">빠른 시작</span></a></li>
         <li><a href="#features">■ <span data-lang="en">Features</span><span data-lang="ko">기능</span></a></li>
         <li><a href="#faq">● <span data-lang="en">FAQ</span><span data-lang="ko">FAQ</span></a></li>
+        <li><a href="features/workspace-memory.html">→ <span data-lang="en">Docs</span><span data-lang="ko">문서</span></a></li>
         <li><a href="https://github.com/tmdgusya/pi-engineering-discipline-extension" target="_blank">→ GitHub</a></li>
       </ul>
     </div>
@@ -270,10 +271,10 @@
           </div>
           <div class="feature-desc">
             <p data-lang="en">
-              12 bundled agents for exploration, execution, planning, and review. Delegate tasks via single, parallel (max 8 tasks, 4 concurrent), or chain modes with cycle detection and depth guards.
+              18+ bundled agents for exploration, execution, planning, and review. Delegate tasks via single, parallel (max 12 tasks, 10 concurrent), or chain modes with cycle detection and depth guards.
             </p>
             <p data-lang="ko">
-              탐색, 실행, 계획, 리뷰를 위한 12개 번들 에이전트. 사이클 감지 및 깊이 가드와 함께 단일, 병렬(최대 8개 작업, 4개 동시), 체인 모드로 작업을 위임하세요.
+              탐색, 실행, 계획, 리뷰를 위한 18개 이상의 번들 에이전트. 사이클 감지 및 깊이 가드와 함께 단일, 병렬(최대 12개 작업, 10개 동시), 체인 모드로 작업을 위임하세요.
             </p>
           </div>
         </div>
@@ -334,10 +335,10 @@
           </div>
           <div class="feature-desc">
             <p data-lang="en">
-              Microcompaction truncates old tool results. Phase-aware summarization preserves workflow state across compaction. Phase and goal document survive context limits.
+              <a href="features/compaction.html">Microcompaction</a> truncates old tool results. Phase-aware summarization preserves workflow state across compaction. Phase and goal document survive context limits.
             </p>
             <p data-lang="ko">
-              마이크로컴팩션이 오래된 도구 결과를 자릅니다. 단계 인식 요약이 컴팩션 전반에 걸쳐 워크플로 상태를 보존합니다. 단계 및 목표 문서가 컨텍스트 한계를 초과합니다.
+              <a href="features/compaction.html">마이크로컴팩션</a>이 오래된 도구 결과를 자릅니다. 단계 인식 요약이 컴팩션 전반에 걸쳐 워크플로 상태를 보존합니다. 단계 및 목표 문서가 컨텍스트 한계를 초과합니다.
             </p>
           </div>
         </div>
@@ -361,15 +362,15 @@
         <div class="card">
           <span class="feature-icon">★</span>
           <div class="feature-title">
-            <span data-lang="en">11 Behavioral Skills</span>
-            <span data-lang="ko">11개 행동 스킬</span>
+            <span data-lang="en">Behavioral Skills</span>
+            <span data-lang="ko">행동 스킬</span>
           </div>
           <div class="feature-desc">
             <p data-lang="en">
-              Bundled LLM skill rulesets: clarification, plan crafting, run plan, review work, simplify, systematic debugging, Karpathy discipline, Rob Pike optimization, and more.
+              Bundled LLM skill rulesets: clarification, plan crafting, run plan, review work, simplify, systematic debugging, Karpathy discipline, Rob Pike optimization, long-run orchestration, milestone planning, and more.
             </p>
             <p data-lang="ko">
-              번들 LLM 스킬 룰셋: 명확화, 계획 작성, 계획 실행, 작업 리뷰, 단순화, 체계적 디버깅, Karpathy 디사이플린, Rob Pike 최적화 등.
+              번들 LLM 스킬 룰셋: 명확화, 계획 작성, 계획 실행, 작업 리뷰, 단순화, 체계적 디버깅, Karpathy 디사이플린, Rob Pike 최적화, 롱런 오케스트레이션, 마일스톤 계획 등.
             </p>
           </div>
         </div>
@@ -389,11 +390,24 @@
             </p>
           </div>
         </div>
+        <div class="card">
+          <span class="feature-icon">→</span>
+          <div class="feature-title">
+            <span data-lang="en">Full Documentation</span>
+            <span data-lang="ko">전체 문서</span>
+          </div>
+          <div class="feature-desc">
+            <p data-lang="en">
+              Deep-dive docs for every feature: <a href="features/workspace-memory.html">Workspace Memory</a>, <a href="features/compaction.html">Compaction</a>, <a href="features/team-mode.html">Team Mode</a>, <a href="features/code-review.html">Code Review</a>, <a href="features/sandboxed-bash.html">Sandboxed Bash</a>, <a href="features/worktree-isolation.html">Worktree Isolation</a>, and <a href="features/power-tools.html">Power Tools</a>.
+            </p>
+            <p data-lang="ko">
+              모든 기능에 대한 심층 문서: <a href="features/workspace-memory.html">워크스페이스 메모리</a>, <a href="features/compaction.html">컴팩션</a>, <a href="features/team-mode.html">팀 모드</a>, <a href="features/code-review.html">코드 리뷰</a>, <a href="features/sandboxed-bash.html">샌드박스 Bash</a>, <a href="features/worktree-isolation.html">워크트리 격리</a>, <a href="features/power-tools.html">파워 툴</a>.
+            </p>
+          </div>
+        </div>
 
       </div>
     </section>
-
-    <!-- FAQ -->
     <section class="section" id="faq">
       <h2>
         <span class="icon">●</span>
@@ -440,13 +454,13 @@
           <div class="faq-body">
             <p data-lang="en">
               <strong>Single:</strong> One-off tasks sent to a specific agent.<br>
-              <strong>Parallel:</strong> Dispatch multiple agents at once (max 8 tasks, 4 concurrent). Each runs independently.<br>
+              <strong>Parallel:</strong> Dispatch multiple agents at once (max 12 tasks, 10 concurrent). Each runs independently.<br>
               <strong>Chain:</strong> Sequential pipeline where each step receives the previous step's output via <code>{previous}</code> placeholder.<br>
               All modes include cycle detection, depth limits (max 3), and concurrency control.
             </p>
             <p data-lang="ko">
               <strong>단일:</strong> 특정 에이전트에 보내는 일회성 작업.<br>
-              <strong>병렬:</strong> 여러 에이전트를 한 번에 디스패치(최대 8개 작업, 4개 동시). 각각 독립적으로 실행.<br>
+              <strong>병렬:</strong> 여러 에이전트를 한 번에 디스패치(최대 12개 작업, 10개 동시). 각각 독립적으로 실행.<br>
               <strong>체인:</strong> 각 단계가 이전 단계의 출력을 <code>{previous}</code> 플레이스홀더로 받는 순차 파이프라인.<br>
               모든 모드에 사이클 감지, 깊이 제한(최대 3), 동시성 제어가 포함됩니다.
             </p>
