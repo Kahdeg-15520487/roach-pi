@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.21.4](https://github.com/tmdgusya/roach-pi/compare/v1.21.3...v1.21.4) (2026-05-05)
+
+### Bug Fixes
+
+* prevent fff native watcher fd leaks ([b8c38a8](https://github.com/tmdgusya/roach-pi/commit/b8c38a8eb6b8f302a7aadf89bb098567483b76b3))
+
 ## [1.21.3](https://github.com/tmdgusya/roach-pi/compare/v1.21.2...v1.21.3) (2026-05-05)
 
 ### Bug Fixes
