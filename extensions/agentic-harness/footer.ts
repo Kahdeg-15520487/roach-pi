@@ -6,9 +6,7 @@ import { PLAN_PROGRESS_SPINNER_MS, type PlanProgressTracker } from "./plan-progr
 import type { MilestoneTracker } from "./milestone-tracker.js";
 import type { FooterPresetName } from "./ui-settings.js";
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Types
-// ═══════════════════════════════════════════════════════════════════════════
 
 export interface GitStats {
   ahead: number;
@@ -42,7 +40,7 @@ export interface ActiveTools {
 
 type FooterSegmentId = "logo" | "path" | "git" | "model" | "thinking" | "context" | "statuses" | "tools" | "cache";
 
-type FooterSegmentColor = ThemeColor | "path" | "model" | "separator";
+type FooterSegmentColor = ThemeColor | "logo" | "path" | "git" | "model" | "thinking" | "context" | "default";
 
 type FooterSegment = {
   id: FooterSegmentId;
@@ -60,36 +58,44 @@ export interface FooterOptions {
   preset?: FooterPresetName;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Nerd Font Icons
-// ═══════════════════════════════════════════════════════════════════════════
 
-const ICONS = { folder: "", branch: "", model: "󰚩", context: "󰍛", cache: "󰆼", tool: "󰒓", status: "󰄬" } as const;
-const ICONS_PLAIN = { folder: "📁", branch: "⎇", model: "◆", context: "◈", cache: "⊡", tool: "▶", status: "●" } as const;
+const ICONS = {
+  logo: "π",
+  folder: "",
+  branch: "󰘬",
+  model: "",
+  thinking: "󰌵",
+  context: "󰍛",
+  cache: "󰆼",
+  tool: "󰒓",
+  status: "󰄬",
+} as const;
+
+const ICONS_PLAIN = {
+  logo: "π",
+  folder: "📁",
+  branch: "⎇",
+  model: "◆",
+  thinking: "◇",
+  context: "◈",
+  cache: "⊡",
+  tool: "▶",
+  status: "●",
+} as const;
 
 let useNerdIcons = true;
 function getIcons() { return useNerdIcons ? ICONS : ICONS_PLAIN; }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Powerline separator (theme-based, works on any background)
-// ═══════════════════════════════════════════════════════════════════════════
-
-// U+E0B0 Powerline right arrow
-const SEP_POWERLINE = "";
-
-// ═══════════════════════════════════════════════════════════════════════════
 // Presets
-// ═══════════════════════════════════════════════════════════════════════════
 
 const FOOTER_PRESET_DEFINITIONS: Record<FooterPresetName, FooterPresetDefinition> = {
-  default:  { lines: [["path", "git", "model"], ["context", "statuses", "tools", "cache"]] },
-  compact:  { lines: [["path", "git", "model", "context", "statuses"]] },
-  minimal:  { lines: [["path", "git", "statuses"]] },
+  default:  { lines: [["logo", "model", "thinking", "path", "git"], ["context", "statuses", "tools", "cache"]] },
+  compact:  { lines: [["logo", "model", "thinking", "path", "git", "context", "statuses"]] },
+  minimal:  { lines: [["logo", "path", "git", "statuses"]] },
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Helpers
-// ═══════════════════════════════════════════════════════════════════════════
 
 function progressBar(percent: number, barWidth: number, theme: Theme): string {
   const clamped = Math.max(0, Math.min(100, percent));
@@ -111,21 +117,20 @@ function fitLine(text: string, width: number): string {
   return truncateToWidth(text, width, "");
 }
 
-const POWERLINE_COLORS = {
-  path: "\x1b[38;2;0;175;175m",
-  model: "\x1b[38;2;215;135;175m",
-  separator: "\x1b[38;5;244m",
-} as const;
+const POWERLINE_COLORS: Record<string, { fg: string; bg: string }> = {
+  logo:     { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;0;175;175m" },
+  path:     { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;0;175;175m" },
+  model:    { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;215;135;175m" },
+  thinking: { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;150;200;100m" },
+  git:      { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;200;150;50m" },
+  context:  { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;80;80;80m" },
+  default:  { fg: "\x1b[39m", bg: "\x1b[49m" },
+};
 
-function getSegmentFgAnsi(color: FooterSegmentColor, theme: Theme): string {
-  if (color === "path" || color === "model" || color === "separator") {
-    return POWERLINE_COLORS[color];
-  }
-  return typeof theme.getFgAnsi === "function" ? theme.getFgAnsi(color) : "";
-}
+const RESET = "\x1b[0m";
 
-function colorSegmentText(color: FooterSegmentColor, text: string, theme: Theme): string {
-  return `${getSegmentFgAnsi(color, theme)}${text}\x1b[39m`;
+function segmentColor(name: string): { fg: string; bg: string } {
+  return POWERLINE_COLORS[name] ?? POWERLINE_COLORS.default;
 }
 
 function getExtensionStatusText(statuses: ReadonlyMap<string, string>): string | null {
@@ -136,32 +141,38 @@ function getExtensionStatusText(statuses: ReadonlyMap<string, string>): string |
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-/**
- * Render a line of segments with Powerline separators.
- * Uses the original-style foreground palette; no background blocks.
- *
- * Visual: [teal project][green main][mauve model]
- */
-function renderPowerlineLine(segments: FooterSegment[], width: number, theme: Theme): string {
+function renderPowerlineLine(segments: FooterSegment[], width: number): string {
   if (width <= 0 || segments.length === 0) return "";
 
   const parts: string[] = [];
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
+    const color = segmentColor(seg.color);
+    const nextSeg = segments[i + 1];
+    const nextColor = nextSeg ? segmentColor(nextSeg.color) : POWERLINE_COLORS.default;
+
     const icon = seg.icon ? `${seg.icon} ` : "";
-    parts.push(colorSegmentText(seg.color, ` ${icon}${seg.text}`, theme));
+    const text = ` ${icon}${seg.text} `;
+
+    parts.push(`${color.fg}${color.bg}${text}`);
 
     if (i < segments.length - 1) {
-      parts.push(colorSegmentText("separator", SEP_POWERLINE, theme));
+      parts.push(`\x1b[38;2;${extractRgb(color.bg)}m${nextColor.bg}`);
+    } else {
+      parts.push(`\x1b[38;2;${extractRgb(color.bg)}m\x1b[49m${RESET}`);
     }
   }
 
   return fitLine(parts.join(""), width);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+function extractRgb(bgAnsi: string): string {
+  // Extract R;G;B from \x1b[48;2;R;G;Bm
+  const match = bgAnsi.match(/48;2;(\d+);(\d+);(\d+)m/);
+  return match ? `${match[1]};${match[2]};${match[3]}` : "0;0;0";
+}
+
 // RoachFooter
-// ═══════════════════════════════════════════════════════════════════════════
 
 export class RoachFooter implements Component {
   private theme: Theme;
@@ -256,7 +267,7 @@ export class RoachFooter implements Component {
     const border = t.fg("dim", "─".repeat(Math.max(0, width)));
     const segments = this.buildSegments();
     const preset = FOOTER_PRESET_DEFINITIONS[this.preset] ?? FOOTER_PRESET_DEFINITIONS.default;
-    const renderedLines = preset.lines.map((line) => renderPowerlineLine(this.pickSegments(line, segments), width, t));
+    const renderedLines = preset.lines.map((line) => renderPowerlineLine(this.pickSegments(line, segments), width));
     return [border, ...renderedLines];
   }
 
@@ -269,8 +280,12 @@ export class RoachFooter implements Component {
     const icons = getIcons();
     const dirName = basename(this.footerCtx.cwd) || this.footerCtx.cwd;
     const branch = this.footerData.getGitBranch();
-    const modelName = this.footerCtx.getModelName() ?? "no model";
+    const modelInfo = this.footerCtx.getModelInfo();
+    const modelName = modelInfo?.name ?? this.footerCtx.getModelName() ?? "no model";
+    const modelDisplay = modelInfo?.isLatest ? `${modelName} (latest)` : modelName;
     const usage = this.footerCtx.getContextUsage();
+    const gitStats = this.footerCtx.getGitStats();
+    const thinkingLevel = this.footerCtx.getThinkingLevel();
 
     const pct = usage?.percent ?? 0;
     const tokens = usage?.tokens ?? 0;
@@ -288,11 +303,29 @@ export class RoachFooter implements Component {
 
     const segs = new Map<FooterSegmentId, FooterSegment>();
 
+    segs.set("logo", { id: "logo", text: "", icon: icons.logo, color: "logo", priority: 0 });
     segs.set("path", { id: "path", text: dirName, icon: icons.folder, color: "path", priority: 0 });
+
     if (branch && branch !== "detached") {
-      segs.set("git", { id: "git", text: branch, icon: icons.branch, color: "success", priority: 1 });
+      const stats = gitStats;
+      let gitText = branch;
+      if (stats) {
+        const parts: string[] = [];
+        if (stats.ahead > 0) parts.push(`⇡${stats.ahead}`);
+        if (stats.behind > 0) parts.push(`⇣${stats.behind}`);
+        if (stats.dirty > 0) parts.push(`*${stats.dirty}`);
+        if (stats.untracked > 0) parts.push(`?${stats.untracked}`);
+        if (parts.length > 0) gitText += ` ${parts.join(" ")}`;
+      }
+      segs.set("git", { id: "git", text: gitText, icon: icons.branch, color: "git", priority: 1 });
     }
-    segs.set("model", { id: "model", text: modelName, icon: icons.model, color: "model", priority: 2 });
+
+    segs.set("model", { id: "model", text: modelDisplay, icon: icons.model, color: "model", priority: 2 });
+
+    if (thinkingLevel && thinkingLevel !== "off") {
+      segs.set("thinking", { id: "thinking", text: `thinking:${thinkingLevel}`, icon: icons.thinking, color: "thinking", priority: 3 });
+    }
+
     segs.set("context", { id: "context", text: ctxPart, icon: icons.context, color: "dim", priority: 0 });
     segs.set("cache", { id: "cache", text: `cache ${cacheRate}%`, icon: icons.cache, color: cacheColor, priority: 5 });
 
@@ -312,9 +345,7 @@ export class RoachFooter implements Component {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Test exports
-// ═══════════════════════════════════════════════════════════════════════════
 
 export function setUseNerdIcons(value: boolean): void { useNerdIcons = value; }
 export { ICONS, ICONS_PLAIN };
