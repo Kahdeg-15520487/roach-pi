@@ -52,6 +52,11 @@ import { createSandboxedBashOperations } from "./sandbox/bash-operations.js";
 import { resolvePiAgentDir, resolvePiSessionDir } from "./sandbox/agent-dir.js";
 import { makePolicyFingerprint } from "./sandbox/policy-engine.js";
 import { isSensitiveEnvPath } from "./sandbox/sensitive-env.js";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import type { GitStats, ModelInfo } from "./footer.js";
+
+const execFileAsync = promisify(execFile);
 
 type WorkflowPhase =
   | "idle"
@@ -69,6 +74,58 @@ const cacheStats: CacheStats = { totalInput: 0, totalCacheRead: 0 };
 const activeTools: ActiveTools = { running: new Map() };
 const planProgress = new PlanProgressTracker();
 const milestoneTracker = new MilestoneTracker();
+
+async function computeGitStats(cwd: string): Promise<GitStats> {
+  const result: GitStats = { ahead: 0, behind: 0, dirty: 0, untracked: 0 };
+
+  try {
+    const { stdout: abStdout } = await execFileAsync(
+      "git", ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+      { cwd, encoding: "utf-8", timeout: 3000 }
+    );
+    const parts = abStdout.trim().split("\t");
+    if (parts.length === 2) {
+      result.behind = Number(parts[0]) || 0;
+      result.ahead = Number(parts[1]) || 0;
+    }
+  } catch {
+    // No upstream or not a git repo
+  }
+
+  try {
+    const { stdout: stStdout } = await execFileAsync(
+      "git", ["status", "--porcelain"],
+      { cwd, encoding: "utf-8", timeout: 3000 }
+    );
+    const lines = stStdout.trim().split("\n").filter((l) => l.length > 0);
+    for (const line of lines) {
+      if (line.startsWith("??")) {
+        result.untracked++;
+      } else {
+        result.dirty++;
+      }
+    }
+  } catch {
+    // Not a git repo
+  }
+
+  return result;
+}
+
+function getModelInfo(ctx: any): ModelInfo {
+  const model = ctx.model;
+  if (!model) return { name: "no model", isLatest: false };
+
+  const available = ctx.modelRegistry.getAvailable();
+  const sameProvider = available.filter((m: any) => m.provider === model.provider);
+  if (sameProvider.length === 0) return { name: model.name, isLatest: false };
+
+  // Sort by contextWindow descending; highest is considered "latest" flagship
+  sameProvider.sort((a: any, b: any) => b.contextWindow - a.contextWindow);
+  const isLatest = sameProvider[0].id === model.id;
+
+  return { name: model.name, isLatest };
+}
 
 const PLAN_PROGRESS_CUSTOM_TYPE = "plan-progress";
 const MILESTONE_PROGRESS_CUSTOM_TYPE = "milestone-progress";
@@ -1933,13 +1990,36 @@ Do not start multi-step implementation without a clear understanding of what the
 
     const uiSettings = resolveAgenticUiSettings({ cwd: ctx.cwd });
     ctx.ui.setFooter((tui, theme, footerData) => {
-      return new RoachFooter(theme, footerData, {
+      let gitStats: GitStats = { ahead: 0, behind: 0, dirty: 0, untracked: 0 };
+
+      async function refreshGitStats() {
+        gitStats = await computeGitStats(ctx.cwd);
+        tui.requestRender();
+      }
+
+      const gitTimer = setInterval(refreshGitStats, 5000);
+      refreshGitStats();
+      const unsubBranch = footerData.onBranchChange(() => refreshGitStats());
+
+      const footer = new RoachFooter(theme, footerData, {
         cwd: ctx.cwd,
         getModelName: () => ctx.model?.name,
         getContextUsage: () => ctx.getContextUsage(),
+        getGitStats: () => gitStats,
+        getThinkingLevel: () => (ctx as any).getThinkingLevel(),
+        getModelInfo: () => getModelInfo(ctx),
       }, cacheStats, activeTools, planProgress, tui, milestoneTracker, {
         preset: uiSettings.footerPreset,
       });
+
+      const originalDispose = footer.dispose.bind(footer);
+      footer.dispose = () => {
+        originalDispose();
+        clearInterval(gitTimer);
+        unsubBranch();
+      };
+
+      return footer;
     });
 
     installEditorComposition(ctx.ui as any);

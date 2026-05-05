@@ -10,10 +10,25 @@ import type { FooterPresetName } from "./ui-settings.js";
 // Types
 // ═══════════════════════════════════════════════════════════════════════════
 
+export interface GitStats {
+  ahead: number;
+  behind: number;
+  dirty: number;
+  untracked: number;
+}
+
+export interface ModelInfo {
+  name: string;
+  isLatest: boolean;
+}
+
 export interface FooterContext {
   cwd: string;
   getModelName: () => string | undefined;
   getContextUsage: () => { tokens: number | null; contextWindow: number; percent: number | null } | undefined;
+  getGitStats: () => GitStats | undefined;
+  getThinkingLevel: () => "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined;
+  getModelInfo: () => ModelInfo | undefined;
 }
 
 export interface CacheStats {
@@ -25,7 +40,7 @@ export interface ActiveTools {
   running: Map<string, string>;
 }
 
-type FooterSegmentId = "path" | "git" | "model" | "context" | "statuses" | "tools" | "cache";
+type FooterSegmentId = "logo" | "path" | "git" | "model" | "thinking" | "context" | "statuses" | "tools" | "cache";
 
 type FooterSegmentColor = ThemeColor | "path" | "model" | "separator";
 
