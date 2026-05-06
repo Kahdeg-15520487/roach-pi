@@ -1,7 +1,7 @@
 # Long Run State: Structured Harness State Tools Migration
 
 **Created:** 2026-05-06 18:00
-**Last Updated:** 2026-05-06 19:02
+**Last Updated:** 2026-05-06 19:10
 **Status:** executing
 
 **Context Brief:** docs/engineering-discipline/context/2026-05-06-structured-harness-state-tools-brief.md
@@ -15,7 +15,7 @@
 
 | ID | Name | Status | Attempts | Dependencies | Plan File | Review File |
 |----|------|--------|----------|--------------|-----------|-------------|
-| M1 | State Kernel and Pure Renderers | validating | 1 | — | docs/engineering-discipline/plans/2026-05-06-m1-state-kernel-and-pure-renderers.md | — |
+| M1 | State Kernel and Pure Renderers | completed | 1 | — | docs/engineering-discipline/plans/2026-05-06-m1-state-kernel-and-pure-renderers.md | docs/engineering-discipline/reviews/2026-05-06-m1-state-kernel-and-pure-renderers-review.md |
 | M2 | Durable Storage and Replay Foundation | pending | 0 | M1 | — | — |
 | M3 | Structured Harness Tools | pending | 0 | M1, M2 | — | — |
 | M4 | Skill and Workflow Migration | pending | 0 | M3 | — | — |
@@ -58,3 +58,4 @@ Phase 7: M_final
 | 2026-05-06 18:31 | plan-corrected | M1 verification commands hardened with workspace-local TMPDIR after sandboxed Vitest hit EPERM in /var/folders. |
 | 2026-05-06 18:59 | blocker-fixed | Subagent launch sandbox disabled in code path for future sessions; root build/test passed. Current pi session still has old registered tool closure until restart. |
 | 2026-05-06 19:02 | review-started | M1 State Kernel and Pure Renderers |
+| 2026-05-06 19:10 | review-passed | M1 independent review PASS; checkpoint written to docs/engineering-discipline/harness/structured-harness-state-tools-2026-05-06/checkpoints/M1-checkpoint.md |
