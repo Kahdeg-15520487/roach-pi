@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.23.0](https://github.com/tmdgusya/roach-pi/compare/v1.22.1...v1.23.0) (2026-05-06)
+
+### Features
+
+* add structured harness state tools ([290a420](https://github.com/tmdgusya/roach-pi/commit/290a4203d5898f6bb4c98a39b79dca3ca0c7da62))
+
+### Documentation
+
+* record main push completion ([4ba7418](https://github.com/tmdgusya/roach-pi/commit/4ba7418d447b3d5de501acf2fa02d3d549342e7c))
+
+### Refactor
+
+* **agentic-harness:** reduce ultraplan reviewers from 5 to 3 ([f3f98ec](https://github.com/tmdgusya/roach-pi/commit/f3f98ec407ff787790f3fed540cfcae4886af1e4))
+
 ## Unreleased
 
 ### Improvements
