@@ -145,7 +145,7 @@ function getExtensionStatusText(statuses: ReadonlyMap<string, string>): string |
   const parts = [...statuses.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([, v]) => stripAnsi(v).trim())
-    .filter((v) => visibleWidth(v) > 0);
+    .filter((v) => visibleWidth(v) > 0 && !v.includes("thinking:") && !v.includes("💾"));
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
