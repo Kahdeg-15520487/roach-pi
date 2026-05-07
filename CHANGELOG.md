@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.25.0](https://github.com/tmdgusya/roach-pi/compare/v1.24.0...v1.25.0) (2026-05-07)
+
+### Features
+
+* add durable async subagent joins ([8210721](https://github.com/tmdgusya/roach-pi/commit/82107219ac8f40ec0429311c6728fb73edd6b1ae))
+
 ## [1.24.0](https://github.com/tmdgusya/roach-pi/compare/v1.23.0...v1.24.0) (2026-05-07)
 
 ### Features
