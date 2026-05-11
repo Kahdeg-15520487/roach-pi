@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.26.2](https://github.com/tmdgusya/roach-pi/compare/v1.26.1...v1.26.2) (2026-05-11)
+
+### Bug Fixes
+
+* add task_blocked to TeamEventType and fix runTeam test signature ([dd761b8](https://github.com/tmdgusya/roach-pi/commit/dd761b8bc5093c012171000051f3cae08b6f3ddd))
+* resolve 6 bugs from code review and stabilize test suite ([5e56141](https://github.com/tmdgusya/roach-pi/commit/5e56141946a92a57babf44ba7c384264762f2f5a))
+
+### Documentation
+
+* add SVG illustrations for README feature sections ([2cfcb2a](https://github.com/tmdgusya/roach-pi/commit/2cfcb2a57d52eedef91378de4f6d35c2eee69021))
+* restructure README with visual sections and illustrations ([a95d041](https://github.com/tmdgusya/roach-pi/commit/a95d0411eb188e519db905e8bd9f14ab17e391ca))
+
 ## [1.26.1](https://github.com/tmdgusya/roach-pi/compare/v1.26.0...v1.26.1) (2026-05-08)
 
 ### Bug Fixes
