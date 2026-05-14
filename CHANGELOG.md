@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.26.4](https://github.com/tmdgusya/roach-pi/compare/v1.26.3...v1.26.4) (2026-05-14)
+
+### Bug Fixes
+
+* respect shellPath setting in sandboxed bash operations ([b94b986](https://github.com/tmdgusya/roach-pi/commit/b94b986c2fb210adfb3b811f0592c0946bb51fac))
+
 ## [1.26.3](https://github.com/tmdgusya/roach-pi/compare/v1.26.2...v1.26.3) (2026-05-11)
 
 ### Bug Fixes
