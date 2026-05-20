@@ -2350,7 +2350,20 @@ Do not start multi-step implementation without a clear understanding of what the
       return footer;
     });
 
-    installEditorComposition(ctx.ui as any);
+    installEditorComposition(ctx.ui as any, {
+      getBorderContext: () => {
+        const usage = ctx.getContextUsage();
+        return {
+          modelName: ctx.model?.name ?? "unknown",
+          thinkingLevel: "off" as const,
+          cwd: ctx.cwd,
+          gitBranch: null,
+          gitDirty: false,
+          contextPercent: usage?.percent ?? 0,
+          contextWindow: usage?.contextWindow ?? 0,
+        };
+      },
+    });
 
     ctx.ui.notify(
       "Agentic Harness loaded: /clarify, /plan, /ultraplan, /reset-phase",

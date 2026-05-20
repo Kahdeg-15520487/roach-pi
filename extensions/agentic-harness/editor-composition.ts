@@ -8,6 +8,7 @@ import {
   restoreEditorFromStash,
   saveEditorToStash,
 } from "./editor-stash.js";
+import { buildTopBorder, buildBottomBorder, fg24, type BorderContext } from "./editor-border.js";
 
 export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: unknown) => EditorComponent;
 
@@ -18,6 +19,7 @@ export type EditorCompositionUi = Partial<EditorTextUi> & {
 
 export interface EditorCompositionOptions {
   stash?: EditorStash;
+  getBorderContext?: () => BorderContext | undefined;
 }
 
 const SHORTCUT_SAVE = "\x13"; // Ctrl+S
@@ -35,17 +37,32 @@ function renderStatusLine(width: number, stash: EditorStash): string {
 }
 
 function colorBorder(editor: EditorComponent, theme: EditorTheme): void {
-  const originalBorderColor = editor.borderColor ?? theme.borderColor;
-  editor.borderColor = (text: string) => theme.borderColor(originalBorderColor(text));
+  editor.borderColor = (text: string) => fg24("#178fb9", text);
 }
 
-export function decorateEditor(editor: EditorComponent, ui: EditorTextUi, stash: EditorStash = defaultEditorStash): EditorComponent {
+export function decorateEditor(
+  editor: EditorComponent,
+  ui: EditorTextUi,
+  stash: EditorStash = defaultEditorStash,
+  getBorderContext?: () => BorderContext | undefined,
+): EditorComponent {
   const decoratedEditor = editor as EditorComponent & Record<symbol, unknown>;
   if (decoratedEditor[DECORATED_EDITOR_SYMBOL]) return editor;
 
   const originalRender = editor.render.bind(editor);
   editor.render = (width: number) => {
-    const lines = originalRender(width);
+    let lines = originalRender(width);
+
+    if (getBorderContext && lines.length >= 2) {
+      const ctx = getBorderContext();
+      if (ctx) {
+        const borderColor = editor.borderColor ?? ((t: string) => t);
+        lines = [...lines];
+        lines[0] = buildTopBorder(ctx, width, borderColor);
+        lines[lines.length - 1] = buildBottomBorder(width, borderColor);
+      }
+    }
+
     return [...lines, renderStatusLine(width, stash)];
   };
 
@@ -90,7 +107,7 @@ export function installEditorComposition(ui: EditorCompositionUi, options: Edito
       ? previousFactory(tui, theme, keybindings)
       : new CustomEditor(tui, theme, keybindings as any);
     colorBorder(editor, theme);
-    return decorateEditor(editor, editorUi, stash);
+    return decorateEditor(editor, editorUi, stash, options.getBorderContext);
   }) as EditorFactory & Record<symbol, unknown>;
   composedFactory[BASE_FACTORY_SYMBOL] = previousFactory;
   ui.setEditorComponent(composedFactory);

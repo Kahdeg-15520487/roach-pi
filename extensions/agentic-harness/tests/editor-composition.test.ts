@@ -13,6 +13,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 
 import { decorateEditor, editorCompositionShortcuts, installEditorComposition } from "../editor-composition.js";
 import { EditorStash } from "../editor-stash.js";
+import type { BorderContext } from "../editor-border.js";
 
 function createEditor(lines: string[] = ["editor"]): EditorComponent {
   return {
@@ -147,5 +148,133 @@ describe("editor composition", () => {
     editor.handleInput("a");
 
     expect(originalHandleInput).toHaveBeenCalledWith("a");
+  });
+
+  it("replaces top and bottom borders when getBorderContext returns a context", () => {
+    const borderLines = ["────────────────────────────────────────", "content line", "────────────────────────────────────────"];
+    const editor = createEditor(borderLines);
+    const ctx: BorderContext = {
+      modelName: "test-model",
+      thinkingLevel: "off",
+      cwd: "/tmp/test",
+      gitBranch: null,
+      gitDirty: false,
+      contextPercent: 10,
+      contextWindow: 128000,
+    };
+    const decorated = decorateEditor(editor, createUi() as any, new EditorStash(), () => ctx);
+    const lines = decorated.render(40);
+
+    // Top border should contain model name (stripped of ANSI)
+    const topPlain = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
+    expect(topPlain).toContain("test-model");
+
+    // Bottom border should be a solid line
+    const bottomPlain = lines[lines.length - 2].replace(/\x1b\[[0-9;]*m/g, "");
+    expect(bottomPlain).toContain("─");
+
+    // Status line is still appended
+    expect(lines[lines.length - 1]).toContain("stash empty");
+  });
+
+  it("does not replace borders when getBorderContext returns undefined", () => {
+    const borderLines = ["original-top", "content", "original-bottom"];
+    const editor = createEditor(borderLines);
+    const decorated = decorateEditor(editor, createUi() as any, new EditorStash(), () => undefined);
+    const lines = decorated.render(80);
+
+    expect(lines[0]).toBe("original-top");
+    expect(lines[lines.length - 2]).toBe("original-bottom");
+  });
+
+  it("does not replace borders when editor has fewer than 2 lines", () => {
+    const editor = createEditor(["single-line"]);
+    const ctx: BorderContext = {
+      modelName: "test-model",
+      thinkingLevel: "off",
+      cwd: "/tmp",
+      gitBranch: null,
+      gitDirty: false,
+      contextPercent: 0,
+      contextWindow: 0,
+    };
+    const decorated = decorateEditor(editor, createUi() as any, new EditorStash(), () => ctx);
+    const lines = decorated.render(80);
+
+    expect(lines[0]).toBe("single-line");
+  });
+
+  it("keeps border lines width-safe when getBorderContext is provided", () => {
+    const borderLines = ["────────────────────────────────────────", "content", "────────────────────────────────────────"];
+    const ctx: BorderContext = {
+      modelName: "test-model",
+      thinkingLevel: "medium",
+      cwd: "/home/user/projects/myapp",
+      gitBranch: "main",
+      gitDirty: true,
+      contextPercent: 55,
+      contextWindow: 200000,
+    };
+    const editor = createEditor(borderLines);
+    const decorated = decorateEditor(editor, createUi() as any, new EditorStash(), () => ctx);
+
+    for (const width of [20, 40, 80]) {
+      for (const line of decorated.render(width)) {
+        expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+      }
+    }
+  });
+
+  it("installEditorComposition passes getBorderContext to decorateEditor", () => {
+    const setEditorComponent = vi.fn();
+    const existingEditor = createEditor(["────────────────────────────────────────", "content", "────────────────────────────────────────"]);
+    const previousFactory = vi.fn(() => existingEditor);
+    const ctx: BorderContext = {
+      modelName: "composed-model",
+      thinkingLevel: "off",
+      cwd: "/tmp",
+      gitBranch: null,
+      gitDirty: false,
+      contextPercent: 5,
+      contextWindow: 100000,
+    };
+    const ui = {
+      ...createUi(),
+      getEditorComponent: vi.fn(() => previousFactory),
+      setEditorComponent,
+    };
+
+    installEditorComposition(ui as any, {
+      stash: new EditorStash(),
+      getBorderContext: () => ctx,
+    });
+
+    const factory = setEditorComponent.mock.calls[0][0];
+    const decorated = factory({} as any, theme, {} as any);
+    const lines = decorated.render(40);
+
+    const topPlain = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
+    expect(topPlain).toContain("composed-model");
+  });
+
+  it("colorBorder uses oh-my-pi blue instead of double-wrapping theme borderColor", () => {
+    const setEditorComponent = vi.fn();
+    const existingEditor = createEditor(["line1", "line2"]);
+    const previousFactory = vi.fn(() => existingEditor);
+    const ui = {
+      ...createUi(),
+      getEditorComponent: vi.fn(() => previousFactory),
+      setEditorComponent,
+    };
+
+    installEditorComposition(ui as any, { stash: new EditorStash() });
+
+    const factory = setEditorComponent.mock.calls[0][0];
+    const decorated = factory({} as any, theme, {} as any);
+
+    // borderColor should use fg24 with #178fb9, not theme.borderColor wrapping
+    const colored = decorated.borderColor!("test");
+    expect(colored).toContain("\x1b[38;2;23;143;185m"); // RGB for #178fb9
+    expect(colored).not.toContain("<border>");
   });
 });
