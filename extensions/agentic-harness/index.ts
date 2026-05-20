@@ -1326,6 +1326,26 @@ Do not start multi-step implementation without a clear understanding of what the
   // never reset-phase, and today invokes /systematic-debugging).
   const SKILL_INVOCATION_RE = /<command-name>|<command-message>|\[skill\]/;
 
+  // Plan checkbox & todo progress tracking — always injected into system prompt.
+  // The milestone-tracker reads plan file checkboxes (- [ ]/- [x]) to render
+  // footer progress. todowrite updates the structured harness state.
+  // Without these rules, progress display stays stale ("0/3") even when work is done.
+  const PROGRESS_TRACKING_RULES = [
+    "\n\n## Plan & Todo Progress Tracking (NON-NEGOTIABLE)",
+    "",
+    "**Hard Rules — violating these means the step is INCOMPLETE:**",
+    "",
+    "1. **Plan checkboxes**: After each step in a plan file passes verification, IMMEDIATELY update `- [ ]` to `- [x]` using the `edit` tool. Not after the task — after the STEP.",
+    "2. **Never batch-update**: One step done = one checkbox flipped. Do not accumulate and update at the end.",
+    "3. **todowrite**: After completing a task, call `todoread` then `todowrite` with updated status. Never defer to later.",
+    "4. **Before moving to next step**: Verify the current step's checkbox is `[x]` in the plan file.",
+    "5. **Retried steps**: If a step fails and is retried successfully, update the checkbox immediately.",
+    "",
+    "**Why**: The milestone-tracker reads these checkboxes for real-time footer progress display. Stale `- [ ]` = broken progress UI for the user.",
+    "",
+    "**CLAIMING A STEP IS DONE WITHOUT FLIPPING THE CHECKBOX = INCOMPLETE STEP.**",
+  ].join("\n");
+
   pi.on("before_agent_start", async (event, _ctx) => {
     const isSkillInvocation = SKILL_INVOCATION_RE.test(event.prompt ?? "");
     const phaseGuidance = (isRootSession && !isSkillInvocation) ? PHASE_GUIDANCE[currentPhase] : "";
@@ -1347,9 +1367,10 @@ Do not start multi-step implementation without a clear understanding of what the
       : "";
 
     const combined = phaseGuidance + idleGuidance + asyncGuidance;
-    if (!combined && !delegationInfo) return;
+    // Always inject progress tracking rules (they are unconditional).
+    // Phase guidance and delegation info are conditional.
     return {
-      systemPrompt: event.systemPrompt + combined + delegationInfo,
+      systemPrompt: event.systemPrompt + PROGRESS_TRACKING_RULES + combined + delegationInfo,
     };
   });
 
