@@ -211,6 +211,8 @@ After review is complete, update the milestone status through `harness_milestone
 { "runId": "<run-id>", "action": "set_status", "id": "M1", "status": "completed" }
 ```
 
+If review completion corresponds to a plan task, update that task through `todowrite` rather than `harness_plan`.
+
 - **PASS** → Report results to the user and suggest next steps (PR creation, deployment, etc.)
 - **FAIL** → Report failure items to the user. If fixes are needed, suggest transitioning to the `agentic-run-plan` or `agentic-systematic-debugging` skill
 - If the plan itself has issues → suggest returning to the `agentic-plan-crafting` skill to revise the plan

@@ -14,13 +14,13 @@ Long-running execution must be **resumable, auditable, and fail-safe.** Every st
 ## Hard Gates
 
 1. **Milestones must exist before execution.** Either from `agentic-milestone-planning` skill or user-provided. Never generate milestones inline during execution.
-2. **Canonical structured state must be updated before and after every milestone.** Use `harness_milestone`, `harness_plan`, and `harness_todo`; rendered markdown is audit output only. If it is not in structured state, it didn't happen.
+2. **Canonical structured state must be updated before and after every milestone.** Use `harness_milestone` for milestone creation, dependency metadata, attempts, plan files, review files, and milestone lifecycle. Use `todoread` and `todowrite` for normal milestone/task progress updates visible to the agent. Rendered markdown is audit output only. If it is not in structured state, it didn't happen.
 3. **Each milestone must complete the full pipeline.** agentic-plan-crafting → agentic-run-plan → agentic-review-work. No shortcuts. No skipping agentic-review-work "because it looked fine."
 4. **Failed milestones block dependents.** If M2 depends on M1 and M1 fails review, M2 does not start. Period.
 5. **User confirmation required at gate points.** Before starting a new milestone phase (planning, execution, review), check if the user wants to continue, pause, or abort.
 6. **Never modify completed milestones.** Once a milestone passes agentic-review-work, its files are locked. If a later milestone needs changes to earlier work, that is a new milestone.
 7. **Checkpoint after every milestone completion.** Write a checkpoint file recording what was done, test results, and review verdict before proceeding.
-8. **Do not execute plan tasks directly as the main agent.** In long-run mode, the main agent is an orchestrator only. Plan task implementation must go through `agentic-run-plan` / worker-validator flow, and structured task progress must be persisted with `harness_plan set_task_status`.
+8. **Do not execute plan tasks directly as the main agent.** In long-run mode, the main agent is an orchestrator only. Plan task implementation must go through `agentic-run-plan` / worker-validator flow, and structured task progress must be persisted with `todoread` and `todowrite`.
 
 ## When To Use
 
@@ -37,7 +37,7 @@ Long-running execution must be **resumable, auditable, and fail-safe.** Every st
 ## Input
 
 1. **Structured harness run identity** — `runId` plus optional `rootDir`/`PI_HARNESS_STATE_ROOT`.
-2. Canonical state is loaded with `harness_milestone load` and `harness_plan load`; `state.md`, milestone markdown, and checkpoint markdown are rendered/audit artifacts only.
+2. Canonical milestone metadata is loaded with `harness_milestone load`; normal milestone/task progress is loaded with `todoread`. `state.md`, milestone markdown, and checkpoint markdown are rendered/audit artifacts only.
 
 If no structured milestone state exists, ask the user if they want to run `agentic-milestone-planning` first.
 
@@ -46,7 +46,7 @@ If no structured milestone state exists, ask the user if they want to run `agent
 ### Phase 1: Load and Validate State
 
 1. Load canonical milestone state with `harness_milestone load` using the run's `runId` and `rootDir`.
-2. For every milestone that has a `planFile`/plan id, load canonical task state with `harness_plan load`; do not infer task status from markdown checkboxes.
+2. For every milestone that has a `planFile`/plan id, call `todoread` to load canonical milestone/task progress; do not infer task status from markdown checkboxes.
 3. Validate:
    - All milestone dependencies in structured state form a valid DAG (no cycles, topological sort possible)
    - No milestone is in an invalid state (e.g., `executing` without an attached structured plan)
@@ -123,15 +123,15 @@ Before starting a milestone:
    - Create a plan document at `docs/engineering-discipline/plans/YYYY-MM-DD-<milestone-name>.md`
    - The plan must satisfy all milestone success criteria
    - The plan must not modify files outside the milestone's scope
-3. Prepare to record the plan file path in canonical structured state after user approval
+3. Prepare to record the plan file path in canonical milestone state after user approval
 4. **User gate:** Present the plan and ask for approval before execution
-5. After approval, attach the plan to the milestone via `harness_plan`:
+5. After approval, attach the plan file path to the milestone via `harness_milestone`:
    ```json
-   { "runId": "<run-id>", "action": "attach", "planId": "<plan-id>", "milestoneId": "M1", "title": "...", "goal": "...", "planFile": "docs/.../plan.md" }
+   { "runId": "<run-id>", "action": "update", "id": "M1", "planFile": "docs/.../plan.md" }
    ```
-6. Define every task from the approved plan via `harness_plan define_tasks` before execution begins:
+6. Initialize normal task progress from the approved plan via `todowrite` before execution begins:
    ```json
-   { "runId": "<run-id>", "action": "define_tasks", "planId": "<plan-id>", "tasks": [{ "id": 1, "name": "...", "status": "pending" }] }
+   { "items": [{ "id": "1", "content": "...", "status": "pending" }] }
    ```
 
 #### Step 2-3: Run Plan Phase
@@ -142,7 +142,7 @@ Before starting a milestone:
    - Parallel execution for independent tasks
    - Information-isolated validators
    - The main agent must not edit/write/bash implementation files directly for plan tasks
-   - After every task PASS/FAIL, persist structured status with `harness_plan set_task_status`
+   - After every task PASS/FAIL, persist structured progress with `todoread` and `todowrite`
 3. If agentic-run-plan reports failure after 3 retries on any task:
    - Update canonical structured state via `harness_milestone set_status`: set milestone status to `failed`
    - Record failure details in execution log
@@ -308,7 +308,7 @@ After all milestones are completed (including the Integration Verification Miles
 
 When resuming a paused or interrupted session:
 
-1. Use `harness_milestone load` and `harness_plan load` to determine last known canonical state
+1. Use `harness_milestone load` for milestone lifecycle metadata and `todoread` for normal milestone/task progress.
 2. For each milestone, determine recovery action:
 
 | Last Status | Recovery Action |
@@ -321,7 +321,7 @@ When resuming a paused or interrupted session:
 | `failed` | Present failure to user; ask whether to retry or skip (see Skip Rules below) |
 | `skipped` | Skip (user previously chose to skip this milestone) |
 
-3. For `executing` milestones: use `harness_plan load` to find the first task whose structured status is not `completed`; do not use markdown checkboxes for recovery.
+3. For executing milestones, call `todoread` and continue from the first item whose status is not `completed` or `cancelled`. Do not infer task status from markdown checkboxes.
 4. Read the structured milestone `attempts` counter to determine retry budget remaining. Do not reset the counter on resume — it persists across crashes to prevent infinite retry loops.
 5. Present recovery plan to user before proceeding.
 
@@ -360,13 +360,13 @@ If a single milestone's total active time (from planning start to review complet
 
 ## Structured State vs Markdown
 
-`state.md`, milestone markdown files, and plan markdown files are rendered views of the canonical structured state stored in `state.json`. Agents must update progress through `harness_milestone`, `harness_plan`, and `harness_todo` tools. Editing markdown files directly bypasses the structured state and will be overwritten on the next render.
+`state.md`, milestone markdown files, and plan markdown files are rendered views of the canonical structured state stored in `state.json`. Use `harness_milestone` for milestone creation, dependency metadata, attempts, plan files, review files, and milestone lifecycle. Use `todoread` and `todowrite` for normal milestone/task progress updates visible to the agent. Editing markdown files directly bypasses the structured state and will be overwritten on the next render.
 
 ## Context Window Management
 
 Long-running sessions will hit context window limits. Pi automatically compresses old messages (context compaction). The harness must be designed to survive this:
 
-1. **Never rely on conversation memory for state.** Canonical state lives in structured harness state (`state.json` plus replay events). If the context is compressed, reload with `harness_milestone load` and `harness_plan load` — no information is lost.
+1. **Never rely on conversation memory for state.** Canonical state lives in structured harness state (`state.json` plus replay events). If the context is compressed, reload milestone metadata with `harness_milestone load` and progress with `todoread` — no information is lost.
 2. **Each milestone is a fresh context boundary.** When starting a new milestone's agentic-plan-crafting, the worker subagent starts with a clean context. It receives only the milestone definition and completed predecessor context (see F8 contract) — not the full conversation history.
 3. **Checkpoint files are audit artifacts, not canonical state.** If context is lost mid-milestone, recovery reads structured state first and checkpoint files only for summarized predecessor context.
 4. **Avoid accumulating large inline state.** Do not build up a running summary of all milestones in the conversation. Instead, reference structured harness state and rendered audit artifacts by path.

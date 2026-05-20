@@ -60,7 +60,7 @@ docs/engineering-discipline/plans/YYYY-MM-DD-<feature-name>.md
 ```markdown
 # [Feature Name] Implementation Plan
 
-> **Worker note:** Execute this plan task-by-task using the agentic-run-plan skill or subagents. Checkbox (`- [ ]`) syntax is rendered task formatting only; canonical progress is stored with `harness_plan define_tasks` and `harness_plan set_task_status`.
+> **Worker note:** Execute this plan task-by-task using the agentic-run-plan skill or subagents. Checkbox syntax is rendered task formatting only; canonical progress is read with `todoread` and updated with `todowrite`.
 
 **Goal:** [One sentence describing what this plan builds]
 
@@ -262,9 +262,14 @@ Expected: No regressions — all pre-existing tests still pass
 
 **If the final verification fails**, the plan is not complete. The worker-validator loop in `agentic-run-plan` will handle failure response (see agentic-run-plan's E2E Failure Response Protocol).
 
-After all tasks complete, update the plan's final status through `harness_plan` rather than editing markdown checkboxes:
+After all tasks complete, update final task progress through `todowrite` rather than editing markdown checkboxes:
 ```json
-{ "runId": "<run-id>", "action": "set_task_status", "planId": "<plan-id>", "taskId": 1, "status": "completed" }
+{
+  "todos": [
+    { "id": "M1", "content": "Plan milestone", "status": "completed" },
+    { "id": "M1.T1", "content": "Task 1", "status": "completed" }
+  ]
+}
 ```
 
 ## No Placeholders

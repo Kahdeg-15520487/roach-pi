@@ -447,6 +447,8 @@ Attempts: number of plan-execute-review cycles attempted (incremented at each St
 { "runId": "<run-id>", "action": "create", "id": "M1", "name": "Milestone Name", "status": "pending", "dependencies": [] }
 ```
 
+This initialization records milestone metadata. Normal milestone/task progress during execution is read with `todoread` and updated with `todowrite`.
+
 **Individual milestone file (M1-<name>.md) format:**
 
 ```markdown

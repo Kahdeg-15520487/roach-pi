@@ -1,34 +1,32 @@
 import { Type, type TUnsafe } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
-  applyHarnessCommand,
-  createHarnessState,
+  selectPlanForMilestone,
   selectMilestoneSummary,
   selectPlanSummary,
   selectTodosForOwner,
-  type HarnessCommand,
   type HarnessMilestoneStatus,
   type HarnessPlanTaskStatus,
-  type HarnessState,
   type HarnessTodoOwnerType,
   type HarnessTodoStatus,
 } from "./harness-state.js";
 import {
-  createHarnessReplayEvent,
-  HARNESS_STATE_EVENT_CUSTOM_TYPE,
-} from "./harness-events.js";
-import {
-  createHarnessStateSnapshot,
-  defaultHarnessStateRoot,
-  harnessStateSnapshotPath,
-  readHarnessStateSnapshot,
-  writeHarnessStateSnapshot,
-} from "./harness-storage.js";
+  applyAndPersist,
+  applyAndPersistFromLoadedState,
+  loadHarnessState,
+} from "./harness-state-service.js";
 import {
   renderHarnessPlanMarkdown,
   renderHarnessStateMarkdown,
   renderHarnessTodoMarkdown,
 } from "./harness-render.js";
+import { extractHarnessReplayEventsFromSessionEntries } from "./harness-events.js";
+import {
+  parseTodoFacadeId,
+  readTodosFromHarnessState,
+  todoStatusToMilestoneStatus,
+  todoStatusToPlanTaskStatus,
+} from "./todo-facade.js";
 
 type StringEnumSchema<T extends string> = TUnsafe<T> & {
   type: "string";
@@ -44,107 +42,6 @@ function stringEnum<T extends string>(
     enum: [...values],
     ...options,
   }) as StringEnumSchema<T>;
-}
-
-function isoNow(): string {
-  return new Date().toISOString();
-}
-
-const harnessStateMutationLocks = new Map<string, Promise<unknown>>();
-
-async function withHarnessStateMutationLock<T>(
-  runId: string,
-  rootDir: string | undefined,
-  fn: () => Promise<T>,
-): Promise<T> {
-  const key = `${rootDir ?? defaultHarnessStateRoot()}\0${runId}`;
-  const previous = harnessStateMutationLocks.get(key) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const queued = previous.catch(() => undefined).then(() => current);
-  harnessStateMutationLocks.set(key, queued);
-
-  await previous.catch(() => undefined);
-  try {
-    return await fn();
-  } finally {
-    release();
-    if (harnessStateMutationLocks.get(key) === queued) {
-      harnessStateMutationLocks.delete(key);
-    }
-  }
-}
-
-// ---------- Shared helpers ----------
-
-async function loadHarnessState(
-  runId: string,
-  rootDir?: string,
-  now?: string,
-): Promise<HarnessState> {
-  const dir = rootDir ?? defaultHarnessStateRoot();
-  const path = harnessStateSnapshotPath(dir, runId);
-  const snapshot = await readHarnessStateSnapshot(path);
-  if (snapshot) {
-    return snapshot.state;
-  }
-  return createHarnessState({ runId, title: runId, now: now || isoNow() });
-}
-
-async function persistHarnessState(
-  state: HarnessState,
-  rootDir?: string,
-  now?: string,
-): Promise<void> {
-  const dir = rootDir ?? defaultHarnessStateRoot();
-  const path = harnessStateSnapshotPath(dir, state.runId);
-  const snapshot = createHarnessStateSnapshot(state, { now: now || isoNow() });
-  await writeHarnessStateSnapshot(path, snapshot);
-}
-
-function emitHarnessEvent(
-  ctx: { sessionManager?: any },
-  state: HarnessState,
-  command: HarnessCommand,
-  now?: string,
-  rootDir?: string,
-): void {
-  const event = createHarnessReplayEvent(state, command, { now: now || isoNow(), rootDir });
-  ctx.sessionManager?.appendCustomEntry?.(HARNESS_STATE_EVENT_CUSTOM_TYPE, event);
-}
-
-async function applyAndPersistFromLoadedState(
-  runId: string,
-  rootDir: string | undefined,
-  buildCommand: (state: HarnessState) => HarnessCommand,
-  ctx: { sessionManager?: any },
-): Promise<{
-  state: HarnessState;
-  event: import("./harness-state.js").HarnessStateEvent;
-}> {
-  return withHarnessStateMutationLock(runId, rootDir, async () => {
-    const state = await loadHarnessState(runId, rootDir);
-    const command = buildCommand(state);
-    const replayEvent = createHarnessReplayEvent(state, command, { rootDir });
-    const result = applyHarnessCommand(state, command);
-    await persistHarnessState(result.state, rootDir);
-    ctx.sessionManager?.appendCustomEntry?.(HARNESS_STATE_EVENT_CUSTOM_TYPE, replayEvent);
-    return result;
-  });
-}
-
-async function applyAndPersist(
-  runId: string,
-  rootDir: string | undefined,
-  command: HarnessCommand,
-  ctx: { sessionManager?: any },
-): Promise<{
-  state: HarnessState;
-  event: import("./harness-state.js").HarnessStateEvent;
-}> {
-  return applyAndPersistFromLoadedState(runId, rootDir, () => command, ctx);
 }
 
 // ---------- Tool: harness_milestone ----------
@@ -279,9 +176,163 @@ const HarnessTodoParams = Type.Object({
   status: Type.Optional(HarnessTodoStatusEnum),
 });
 
+// ---------- Tools: todoread / todowrite ----------
+
+const TodoFacadeStatusEnum = stringEnum(
+  ["pending", "in_progress", "completed", "failed", "cancelled"],
+  { description: "Todo status" },
+);
+
+const TodoFacadePriorityEnum = stringEnum(
+  ["high", "medium", "low"],
+  { description: "Todo priority" },
+);
+
+const TodoWriteItem = Type.Object({
+  id: Type.String({ description: "Milestone id like M1 or plan task id like M2.T3" }),
+  content: Type.String({ description: "Human-readable task or milestone label" }),
+  status: TodoFacadeStatusEnum,
+  priority: Type.Optional(TodoFacadePriorityEnum),
+});
+
+const TodoWriteParams = Type.Object({
+  runId: Type.Optional(Type.String({ description: "Harness run id. Optional when a current run can be inferred from session replay." })),
+  rootDir: Type.Optional(Type.String({ description: "Harness state root directory override" })),
+  todos: Type.Array(TodoWriteItem, { description: "Complete updated milestone/task todo list" }),
+});
+
+const TodoReadParams = Type.Object({
+  runId: Type.Optional(Type.String({ description: "Harness run id. Optional when a current run can be inferred from session replay." })),
+  rootDir: Type.Optional(Type.String({ description: "Harness state root directory override" })),
+});
+
+function resolveRunIdentityFromParamsOrSession(
+  params: { runId?: string; rootDir?: string },
+  ctx: { cwd?: string; sessionManager?: any },
+): { runId: string; rootDir?: string } {
+  if (params.runId) return { runId: params.runId, rootDir: params.rootDir };
+
+  const branch = ctx.sessionManager?.getBranch?.() ?? [];
+  const events = extractHarnessReplayEventsFromSessionEntries(branch);
+  const latest = events.at(-1);
+  if (latest?.runId) {
+    return {
+      runId: latest.runId,
+      rootDir: params.rootDir ?? latest.rootDir,
+    };
+  }
+
+  throw new Error("runId is required because no active harness run could be inferred from this session");
+}
+
 // ---------- Registration ----------
 
 export function registerHarnessTools(pi: ExtensionAPI): void {
+  pi.registerTool({
+    name: "todoread",
+    label: "TodoRead",
+    description: "Read current milestone and plan-task progress from roach-pi structured harness state.",
+    promptSnippet: "Read current milestone/task todo progress",
+    promptGuidelines: [
+      "Use todoread before updating or reporting plan/milestone progress.",
+      "IDs like M1 and M2 refer to milestones. IDs like M2.T1 refer to plan tasks inside that milestone.",
+      "Use todowrite to persist progress updates. Do not edit markdown checkboxes as progress state.",
+    ],
+    parameters: TodoReadParams,
+    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+      try {
+        const identity = resolveRunIdentityFromParamsOrSession(params, ctx);
+        const state = await loadHarnessState(identity.runId, identity.rootDir);
+        const result = readTodosFromHarnessState(state, { rootDir: identity.rootDir });
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          details: result,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text", text: `Error: ${message}` }],
+          details: undefined,
+          isError: true,
+        };
+      }
+    },
+  });
+
+  pi.registerTool({
+    name: "todowrite",
+    label: "TodoWrite",
+    description: "Persist milestone and plan-task progress into roach-pi structured harness state.",
+    promptSnippet: "Update current milestone/task todo progress",
+    promptGuidelines: [
+      "Call todoread first, then write back the complete updated milestone/task todo list.",
+      "Use milestone IDs like M1 and task IDs like M1.T1.",
+      "Priority is accepted for compatibility but structured progress persists only status.",
+    ],
+    parameters: TodoWriteParams,
+    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+      try {
+        const identity = resolveRunIdentityFromParamsOrSession(params, ctx);
+
+        for (let index = 0; index < params.todos.length; index += 1) {
+          await applyAndPersistFromLoadedState(
+            identity.runId,
+            identity.rootDir,
+            (current) => {
+              const item = params.todos[index];
+              const parsed = parseTodoFacadeId(item.id);
+              if (parsed.kind === "milestone") {
+                if (!current.milestones.some((m) => m.id === parsed.milestoneId)) {
+                  throw new Error(`Milestone ${parsed.milestoneId} not found`);
+                }
+                return {
+                  type: "set_milestone_status",
+                  id: parsed.milestoneId,
+                  status: todoStatusToMilestoneStatus(item.status),
+                };
+              }
+              if (parsed.kind === "plan_task") {
+                const milestone = current.milestones.find((m) => m.id === parsed.milestoneId);
+                if (!milestone) throw new Error(`Milestone ${parsed.milestoneId} not found`);
+                const plan = selectPlanForMilestone(current, milestone);
+                if (!plan) throw new Error(`No active plan found for milestone ${parsed.milestoneId}`);
+                if (!plan.tasks.some((task) => task.id === parsed.taskId)) {
+                  throw new Error(`Task ${item.id} not found`);
+                }
+                const status = todoStatusToPlanTaskStatus(item.status);
+                const at = new Date().toISOString();
+                return {
+                  type: "set_plan_task_status",
+                  planId: plan.id,
+                  taskId: parsed.taskId,
+                  status,
+                  startedAt: status === "running" ? at : undefined,
+                  completedAt: status === "completed" || status === "failed" || status === "skipped" ? at : undefined,
+                };
+              }
+              throw new Error(`Unsupported todo id ${item.id}; expected M1 or M1.T1`);
+            },
+            ctx,
+          );
+        }
+
+        const finalState = await loadHarnessState(identity.runId, identity.rootDir);
+        const result = readTodosFromHarnessState(finalState, { rootDir: identity.rootDir });
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          details: result,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text", text: `Error: ${message}` }],
+          details: undefined,
+          isError: true,
+        };
+      }
+    },
+  });
+
   pi.registerTool({
     name: "harness_milestone",
     label: "Harness Milestone",
@@ -412,15 +463,7 @@ export function registerHarnessTools(pi: ExtensionAPI): void {
     name: "harness_plan",
     label: "Harness Plan",
     description:
-      "Attach plans, define tasks, set task status, or load/render harness plans through structured state. Prefer this tool over hand-editing plan markdown files.",
-    promptSnippet: "Update harness plan state",
-    promptGuidelines: [
-      "Use harness_plan to attach plans to milestones, define tasks, or update task progress.",
-      "Always provide runId. Use attach to create or update a plan, define_tasks to set the task list.",
-      "Use set_task_status to mark tasks running, completed, failed, etc.",
-      "Use load to get structured JSON summary, render to get markdown output.",
-      "Prefer this tool over editing plan markdown files directly.",
-    ],
+      "Compatibility tool for structured harness plan state. Prefer todoread/todowrite for normal agent-facing progress updates.",
     parameters: HarnessPlanParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
       const {
@@ -567,15 +610,7 @@ export function registerHarnessTools(pi: ExtensionAPI): void {
     name: "harness_todo",
     label: "Harness Todo",
     description:
-      "Set, update, clear, load, or render harness todos through structured state. Prefer this tool over hand-editing todo markdown files.",
-    promptSnippet: "Update harness todo state",
-    promptGuidelines: [
-      "Use harness_todo to manage todos for milestones, plans, or plan tasks.",
-      "Always provide runId. Use set to replace all todos for an owner, update_status to toggle a single todo.",
-      "Use clear to remove all todos for an owner.",
-      "Use load to get structured JSON, render to get markdown output.",
-      "Prefer this tool over editing todo.md files directly.",
-    ],
+      "Compatibility tool for structured harness todo state. Prefer todoread/todowrite for normal agent-facing progress updates.",
     parameters: HarnessTodoParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
       const { runId, action, rootDir, ownerType, ownerId, todos, todoId, status } = params;

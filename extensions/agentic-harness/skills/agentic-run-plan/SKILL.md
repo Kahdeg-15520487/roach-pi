@@ -187,18 +187,19 @@ Report your verdict as PASS or FAIL.
 
 **2-4. Task Status Update (MANDATORY)**
 
-After the validator passes, you **MUST** update the structured plan state via `harness_plan`. Do not skip this step — it is what drives the footer progress display and session restore.
+After the validator passes, you **MUST** update structured progress via `todowrite`. First call `todoread`, then write back the complete list with the relevant `M#.T#` item marked `completed`.
 
 ```json
-{ "runId": "<run-id>", "action": "set_task_status", "planId": "<plan-id>", "taskId": 1, "status": "completed" }
+{
+  "todos": [
+    { "id": "M1", "content": "Foundation", "status": "in_progress" },
+    { "id": "M1.T1", "content": "Create shared service", "status": "completed" },
+    { "id": "M1.T2", "content": "Register todowrite", "status": "pending" }
+  ]
+}
 ```
 
-For failed tasks:
-```json
-{ "runId": "<run-id>", "action": "set_task_status", "planId": "<plan-id>", "taskId": 1, "status": "failed" }
-```
-
-If you do not have a `runId`, use `harness_milestone load` or `harness_plan load` to discover the current state.
+For failed tasks, follow the same pattern with the relevant `M#.T#` item marked `failed`. If you do not have a `runId`, call `todoread` first and use the active run inferred from the session.
 
 **Retry limit:** If the same task fails 3 consecutive times, report the situation to the user and request intervention.
 
@@ -222,11 +223,16 @@ Sequential execution required for:
 
 ### Structured Plan State Updates
 
-When executing a plan through the harness, prefer updating plan progress via the `harness_plan` tool rather than editing plan markdown files directly.
+When executing a plan through the harness, update normal task progress via `todoread` and `todowrite` rather than editing plan markdown files directly.
 
 **After completing a task:**
 ```json
-{ "runId": "<run-id>", "action": "set_task_status", "planId": "<plan-id>", "taskId": 1, "status": "completed" }
+{
+  "todos": [
+    { "id": "M1", "content": "Foundation", "status": "in_progress" },
+    { "id": "M1.T1", "content": "Task 1", "status": "completed" }
+  ]
+}
 ```
 
 **When the plan is first loaded:**

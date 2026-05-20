@@ -1061,13 +1061,70 @@ describe("webfetch Tool", () => {
 });;
 
 describe("Harness Tools", () => {
-  it("should register harness_milestone, harness_plan, and harness_todo", () => {
+  it("should register todoread, todowrite, harness_milestone, harness_plan, and harness_todo", () => {
     const { mockPi, tools } = createMockPi();
     extension(mockPi);
 
+    expect(tools.get("todoread")).toBeDefined();
+    expect(tools.get("todowrite")).toBeDefined();
     expect(tools.get("harness_milestone")).toBeDefined();
     expect(tools.get("harness_plan")).toBeDefined();
     expect(tools.get("harness_todo")).toBeDefined();
+    expect(tools.get("harness_plan")!.promptSnippet).toBeUndefined();
+    expect(tools.get("harness_plan")!.promptGuidelines).toBeUndefined();
+    expect(tools.get("harness_todo")!.promptSnippet).toBeUndefined();
+    expect(tools.get("harness_todo")!.promptGuidelines).toBeUndefined();
+    expect(tools.get("todoread")!.promptGuidelines.length).toBeGreaterThan(0);
+    expect(tools.get("todowrite")!.promptGuidelines.length).toBeGreaterThan(0);
+  });
+
+  it("should prefer todoread and todowrite in active tools", () => {
+    const { mockPi } = createMockPi();
+    const activeTools = ["todoread", "todowrite", "harness_plan", "harness_todo", "harness_milestone"];
+    mockPi.getActiveTools = vi.fn(() => activeTools);
+    mockPi.setActiveTools = vi.fn();
+
+    extension(mockPi);
+
+    expect(mockPi.setActiveTools).toHaveBeenCalledWith([
+      "todoread",
+      "todowrite",
+      "harness_milestone",
+    ]);
+  });
+
+  it("should prefer todoread and todowrite again on session_start", async () => {
+    const { mockPi, events } = createMockPi();
+    const activeTools = ["todoread", "todowrite", "harness_plan", "harness_todo", "harness_milestone"];
+    mockPi.getActiveTools = vi.fn(() => activeTools);
+    mockPi.setActiveTools = vi.fn();
+    extension(mockPi);
+    mockPi.setActiveTools.mockClear();
+
+    await events.get("session_start")![0](
+      {},
+      {
+        cwd: ".",
+        sessionManager: { getBranch: vi.fn(() => []) },
+        ui: {
+          setHeader: vi.fn(),
+          setFooter: vi.fn(),
+          setStatus: vi.fn(),
+          setWidget: vi.fn(),
+          setWorkingVisible: vi.fn(),
+          notify: vi.fn(),
+        },
+        model: undefined,
+        modelRegistry: { getAvailable: vi.fn(() => []) },
+        getContextUsage: vi.fn(),
+      } as any,
+    );
+
+    expect(mockPi.setActiveTools).toHaveBeenCalledWith([
+      "todoread",
+      "todowrite",
+      "harness_milestone",
+    ]);
   });
 
   it("should have runId and action as required on harness_milestone", () => {

@@ -64,6 +64,7 @@ import { renderWebfetchCall, renderWebfetchResult } from "./webfetch/render.js";
 import { registerHarnessTools } from "./harness-tools.js";
 import { HarnessProgressProvider } from "./harness-progress.js";
 import { applyStructuredPlanTaskStatusUpdates, selectStructuredPlanForPaths } from "./harness-runtime-progress.js";
+import { withHarnessStateMutationLock } from "./harness-state-service.js";
 import { getDefaultApprovalStore } from "./sandbox/approval-store.js";
 import { parseSandboxApprovalMode } from "./sandbox/approval-mode.js";
 import { createSandboxedBashOperations } from "./sandbox/bash-operations.js";
@@ -178,33 +179,12 @@ const planTaskIdsByToolCallId = new Map<string, number[]>();
 const sessionPlanPaths = new Set<string>();
 let workingVisibility: WorkingVisibilityController | null = null;
 let harnessProgress: HarnessProgressProvider | null = null;
-const structuredTaskStatusLocks = new Map<string, Promise<void>>();
-
 function extractExplicitPlanTaskIdsFromArgs(args: unknown): number[] {
   return [...new Set(subagentItemRecords(args)
     .filter((item) => item.agent === "plan-compliance" || item.agent === "plan-worker" || item.agent === "plan-validator")
     .map((item) => item.planTaskId)
     .filter((planTaskId): planTaskId is number => typeof planTaskId === "number" && Number.isInteger(planTaskId))
   )];
-}
-
-async function withStructuredTaskStatusLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const previous = structuredTaskStatusLocks.get(key) ?? Promise.resolve();
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const chained = previous.then(() => current, () => current);
-  structuredTaskStatusLocks.set(key, chained);
-  await previous.catch(() => undefined);
-  try {
-    return await fn();
-  } finally {
-    release();
-    if (structuredTaskStatusLocks.get(key) === chained) {
-      structuredTaskStatusLocks.delete(key);
-    }
-  }
 }
 
 type StringEnumSchema<T extends string> = TUnsafe<T> & {
@@ -218,6 +198,20 @@ function stringEnum<T extends string>(values: readonly T[], options: { descripti
     enum: [...values],
     ...options,
   }) as StringEnumSchema<T>;
+}
+
+function preferTodoSurfaceTools(pi: any): void {
+  try {
+    if (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") {
+      return;
+    }
+    const active = pi.getActiveTools();
+    if (!Array.isArray(active)) return;
+    pi.setActiveTools(active.filter((name: string) => name !== "harness_plan" && name !== "harness_todo"));
+  } catch {
+    // Ignore "Extension runtime not initialized" errors during early loading.
+    // Will be retried on session_start.
+  }
 }
 
 export default function (pi: ExtensionAPI) {
@@ -325,56 +319,56 @@ export default function (pi: ExtensionAPI) {
   // non-interactively and have no user at the other end.
   if (isRootSession) {
     pi.registerTool({
-      name: "ask_user_question",
-      label: "Ask User Question",
-      description:
-        "Ask the user a question when the agent needs clarification. The agent composes the question and optional choices dynamically. Returns the user's answer as text.",
-      promptSnippet:
-        "Ask the user a clarifying question with optional multiple-choice answers",
-      promptGuidelines: [
-        "Use ask_user_question whenever you encounter ambiguity, unclear scope, or need user preference.",
-        "Generate the question and choices yourself based on the current context — do not rely on predefined templates.",
-        "Offer concrete choices (A/B/C style) when the options are enumerable. Omit choices for open-ended questions.",
-        "Ask one focused question at a time. Do not bundle multiple questions.",
-        "After receiving an answer, decide whether further clarification is needed or proceed with the task.",
-      ],
-      parameters: AskUserQuestionParams,
-      execute: async (toolCallId, params, signal, onUpdate, ctx) => {
-        const { question, choices, placeholder, defaultValue } = params;
+        name: "ask_user_question",
+        label: "Ask User Question",
+        description:
+          "Ask the user a question when the agent needs clarification. The agent composes the question and optional choices dynamically. Returns the user's answer as text.",
+        promptSnippet:
+          "Ask the user a clarifying question with optional multiple-choice answers",
+        promptGuidelines: [
+          "Use ask_user_question whenever you encounter ambiguity, unclear scope, or need user preference.",
+          "Generate the question and choices yourself based on the current context — do not rely on predefined templates.",
+          "Offer concrete choices (A/B/C style) when the options are enumerable. Omit choices for open-ended questions.",
+          "Ask one focused question at a time. Do not bundle multiple questions.",
+          "After receiving an answer, decide whether further clarification is needed or proceed with the task.",
+        ],
+        parameters: AskUserQuestionParams,
+        execute: async (toolCallId, params, signal, onUpdate, ctx) => {
+          const { question, choices, placeholder, defaultValue } = params;
 
-        let answer: string | undefined;
+          let answer: string | undefined;
 
-        if (choices && choices.length > 0) {
-          const withDirect = choices.includes(DIRECT_INPUT_OPTION)
-            ? choices
-            : [...choices, DIRECT_INPUT_OPTION];
+          if (choices && choices.length > 0) {
+            const withDirect = choices.includes(DIRECT_INPUT_OPTION)
+              ? choices
+              : [...choices, DIRECT_INPUT_OPTION];
 
-          answer = await ctx.ui.select(question, withDirect, { signal });
+            answer = await ctx.ui.select(question, withDirect, { signal });
 
-          if (answer === DIRECT_INPUT_OPTION) {
+            if (answer === DIRECT_INPUT_OPTION) {
+              answer = await ctx.ui.input(question, placeholder || defaultValue, {
+                signal,
+              });
+            }
+          } else {
             answer = await ctx.ui.input(question, placeholder || defaultValue, {
               signal,
             });
           }
-        } else {
-          answer = await ctx.ui.input(question, placeholder || defaultValue, {
-            signal,
-          });
-        }
 
-        if (answer === undefined) {
+          if (answer === undefined) {
+            return {
+              content: [{ type: "text", text: "User cancelled the question." }],
+              details: undefined,
+            };
+          }
+
           return {
-            content: [{ type: "text", text: "User cancelled the question." }],
+            content: [{ type: "text", text: answer }],
             details: undefined,
           };
-        }
-
-        return {
-          content: [{ type: "text", text: answer }],
-          details: undefined,
-        };
-      },
-    });
+        },
+      });
   }
 
   const HEARTBEAT_MS = 1000;
@@ -544,19 +538,19 @@ export default function (pi: ExtensionAPI) {
 
   if (isRootSession && !isTeamWorker && isTeamModeEnabled) {
     pi.registerTool({
-      name: "team",
-      label: "Team",
-      description: "Run a lightweight native team over existing pi subagents with structured task synthesis.",
-      promptSnippet: "Coordinate a small team of bounded pi worker agents",
-      promptGuidelines: [
-        "Use team for coordinated multi-agent execution when a goal can be split into independent bounded tasks.",
-        "Prefer small worker counts for the MVP; max parallel tasks is 12 with 10 concurrent.",
-        "Workers must not recursively orchestrate or spawn subagents.",
-        "Use subagent directly for simple one-off parallel dispatch without team synthesis.",
-      ],
-      parameters: TeamParams,
-      renderCall: (args, theme) => renderCall(args, theme),
-      renderResult: (result, { expanded }, theme) => renderResult(result, expanded, theme),
+        name: "team",
+        label: "Team",
+        description: "Run a lightweight native team over existing pi subagents with structured task synthesis.",
+        promptSnippet: "Coordinate a small team of bounded pi worker agents",
+        promptGuidelines: [
+          "Use team for coordinated multi-agent execution when a goal can be split into independent bounded tasks.",
+          "Prefer small worker counts for the MVP; max parallel tasks is 12 with 10 concurrent.",
+          "Workers must not recursively orchestrate or spawn subagents.",
+          "Use subagent directly for simple one-off parallel dispatch without team synthesis.",
+        ],
+        parameters: TeamParams,
+        renderCall: (args, theme) => renderCall(args, theme),
+        renderResult: (result, { expanded }, theme) => renderResult(result, expanded, theme),
       execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
         const { goal, workerCount, agent, agentScope, worktree, worktreePolicy, backend, maxOutput, runId, resumeRunId, resumeMode, staleTaskMs, commandTarget, commandMessage } = params as TeamToolParams;
         const defaultCwd = ctx.cwd;
@@ -1213,6 +1207,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   registerHarnessTools(pi);
+  // Try now (may fail if runtime not initialized — caught and retried on session_start)
+  preferTodoSurfaceTools(pi);
 
   pi.on("session_shutdown", async (_event, _ctx) => {
     workingVisibility?.restore();
@@ -2049,7 +2045,7 @@ Do not start multi-step implementation without a clear understanding of what the
     const rootDir = latestEvent?.rootDir ?? harnessProgress?.getRunIdentity().rootDir ?? defaultHarnessStateRoot(ctx.cwd);
     if (!runId) return;
 
-    await withStructuredTaskStatusLock(`${rootDir}\u0000${runId}`, async () => {
+    await withHarnessStateMutationLock(runId, rootDir, async () => {
       const snapshotPath = harnessStateSnapshotPath(rootDir, runId);
       const snapshot = await readHarnessStateSnapshot(snapshotPath);
       if (!snapshot) return;
@@ -2180,6 +2176,7 @@ Do not start multi-step implementation without a clear understanding of what the
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    preferTodoSurfaceTools(pi);
     currentPhase = "idle";
     activeGoalDocument = null;
     clarificationDone = false;
