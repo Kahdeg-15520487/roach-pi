@@ -20,7 +20,7 @@ Do not follow plans blindly. If the plan has issues, flag them before executing.
 5. **Worker and Validator must be separate subagents.** The main agent must NOT perform worker or validator roles inline. Each must be dispatched as an independent subagent via the `subagent` tool.
 6. **Validator must not receive worker output.** The validator subagent receives only the plan's task goal and acceptance criteria. It must never receive the worker's diff, logs, or implementation details. The validator judges by reading the code and running tests independently.
 7. **Stop when blocked.** Do not guess. Ask the user.
-8. **Update plan checkboxes after each step.** After a step passes verification, immediately mark `- [ ]` as `- [x]` in the plan file. Do not batch updates or defer to end-of-task. The milestone-tracker reads these checkboxes for real-time progress display.
+8. **Update plan checkboxes and structured state after each step.** After a step passes verification, immediately mark `- [ ]` as `- [x]` in the plan file AND call `todowrite` to update structured state. Do not batch updates or defer to end-of-task. The footer reads structured state for real-time progress display.
 
 ## When To Use
 
@@ -65,7 +65,7 @@ Each task runs through a **Compliance Check → Worker Implementation → Valida
 
 **Step Checkbox Auto-Update (Hard Gate #8):**
 
-Plan files use `- [ ]` checkboxes for step-level progress tracking. The milestone-tracker reads these checkboxes to render progress in the footer. After each step is successfully completed, the plan file MUST be updated to change `- [ ]` to `- [x]` for that step.
+Plan files use `- [ ]` checkboxes for human-readable step-level progress. The structured harness state (`todowrite`/`todoread`) drives real-time footer progress. After each step is successfully completed, you MUST update both the plan checkboxes AND call `todowrite`.
 
 **When to update:**
 - After each step's verification passes (test runs, expected output checks, etc.)
@@ -81,7 +81,7 @@ edit: oldText = "- [ ] **Step N: description**"
 ```
 
 **Why this matters:**
-Without this update, the milestone-tracker shows stale progress (e.g., "0/3") even when all tasks are complete. The plan .md file is the source of truth for checkbox-based progress rendering.
+Without this update, the footer shows stale progress (e.g., "0/3") even when all tasks are complete. The plan `.md` file is human-readable progress; `todoread`/`todowrite` drive the real-time footer display.
 
 ```dot
 digraph task_loop {
@@ -257,7 +257,7 @@ When executing a plan through the harness, update task progress via BOTH `todore
 ```
 
 **After completing a step (plan file checkbox):**
-Use the `edit` tool to change `- [ ]` to `- [x]` for the completed step in the plan .md file. The milestone-tracker reads these checkboxes for real-time footer progress display.
+Use the `edit` tool to change `- [ ]` to `- [x]` for the completed step in the plan .md file. Then call `todowrite` to update structured state for real-time footer progress display.
 
 **When the plan is first loaded:**
 ```json
@@ -265,7 +265,7 @@ Use the `edit` tool to change `- [ ]` to `- [x]` for the completed step in the p
 { "runId": "<run-id>", "action": "define_tasks", "planId": "<plan-id>", "tasks": [{"id":1,"name":"Task 1"}] }
 ```
 
-Plan .md files serve a dual purpose: rendered task specification AND checkbox-based progress tracking for the milestone-tracker.
+Plan .md files serve a dual purpose: rendered task specification AND human-readable progress tracking. The footer reads structured state via `todoread`/`todowrite`.
 
 ### Step 3: E2E Verification Gate
 
@@ -334,7 +334,7 @@ After each task completion, verify:
 | Starting implementation on main/master without explicit user consent | Prohibited without explicit approval |
 | Skipping the E2E gate because individual tasks all passed | Task-level pass ≠ system-level pass; integration bugs hide between tasks |
 | Retrying E2E failures more than twice without user escalation | Wastes budget; user may have context about the root cause |
-| Not updating plan checkboxes after step completion | Milestone-tracker shows stale progress; plan file is the source of truth for checkbox rendering |
+| Not updating plan checkboxes and todowrite after step completion | Footer shows stale progress; structured state is the source of truth for footer rendering |
 
 ## Transition
 

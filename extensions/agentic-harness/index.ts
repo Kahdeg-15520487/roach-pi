@@ -1285,8 +1285,8 @@ Do not start multi-step implementation without a clear understanding of what the
   const SKILL_INVOCATION_RE = /<command-name>|<command-message>|\[skill\]/;
 
   // Plan checkbox & todo progress tracking — always injected into system prompt.
-  // The milestone-tracker reads plan file checkboxes (- [ ]/- [x]) to render
-  // footer progress. todowrite updates the structured harness state.
+  // The structured harness state (todowrite/todoread) drives real-time footer progress.
+  // Plan file checkboxes are human-readable progress. Both must stay in sync.
   // Without these rules, progress display stays stale ("0/3") even when work is done.
   const PROGRESS_TRACKING_RULES = [
     "\n\n## Plan & Todo Progress Tracking (NON-NEGOTIABLE)",
@@ -1299,9 +1299,9 @@ Do not start multi-step implementation without a clear understanding of what the
     "4. **Before moving to next step**: Verify the current step's checkbox is `[x]` in the plan file.",
     "5. **Retried steps**: If a step fails and is retried successfully, update the checkbox immediately.",
     "",
-    "**Why**: The milestone-tracker reads these checkboxes for real-time footer progress display. Stale `- [ ]` = broken progress UI for the user.",
+    "**Why**: The footer reads structured state (todowrite/todoread) for real-time progress display. Stale state = broken progress UI for the user.",
     "",
-    "**CLAIMING A STEP IS DONE WITHOUT FLIPPING THE CHECKBOX = INCOMPLETE STEP.**",
+    "**CLAIMING A STEP IS DONE WITHOUT FLIPPING THE CHECKBOX AND CALLING TODOWRITE = INCOMPLETE STEP.**",
   ].join("\n");
 
   pi.on("before_agent_start", async (event, _ctx) => {
