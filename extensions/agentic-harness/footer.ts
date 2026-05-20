@@ -263,16 +263,23 @@ export class RoachFooter implements Component {
     const normalLines = this.renderNormalFooter(width);
     const border = normalLines[0];
 
+    const hasStructuredMilestones = this.harnessProgress?.hasMilestones() ?? false;
     const hasStructuredPlan = this.harnessProgress?.hasPlan() ?? false;
     const hasPlan = hasStructuredPlan || (this.planProgress?.hasPlan() ?? false);
 
-    if (hasPlan) {
+    if (hasStructuredMilestones || hasPlan) {
       const lines: string[] = [border];
       const pw = Math.max(0, width - 4);
-      if (hasStructuredPlan && this.harnessProgress) {
-        lines.push(...this.harnessProgress.renderPlan(this.theme, pw).map((l) => fitLine(l, width)));
-      } else if (this.planProgress) {
-        lines.push(...this.planProgress.render(this.theme, pw).map((l) => fitLine(l, width)));
+      if (hasStructuredMilestones && this.harnessProgress) {
+        lines.push(...this.harnessProgress.renderMilestones(this.theme, pw).map((l) => fitLine(l, width)));
+        if (hasPlan) lines.push(fitLine(this.theme.fg("dim", "  ·"), width));
+      }
+      if (hasPlan) {
+        if (hasStructuredPlan && this.harnessProgress) {
+          lines.push(...this.harnessProgress.renderPlan(this.theme, pw).map((l) => fitLine(l, width)));
+        } else if (this.planProgress) {
+          lines.push(...this.planProgress.render(this.theme, pw).map((l) => fitLine(l, width)));
+        }
       }
       lines.push(...normalLines);
       return lines;
