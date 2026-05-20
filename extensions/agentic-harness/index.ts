@@ -1513,18 +1513,6 @@ Do not start multi-step implementation without a clear understanding of what the
         }, ctx.cwd, sessionPlanPaths);
       }
 
-      if (toolName === "read" || toolName === "write" || toolName === "edit") {
-        const input = event.input as Record<string, unknown> | undefined;
-        const filePath = typeof input?.path === "string"
-          ? input.path
-          : typeof input?.file_path === "string"
-            ? input.file_path
-            : "";
-        if (filePath.endsWith("completion.md")) {
-          planProgress.clear();
-          persistProgressSnapshot(ctx);
-        }
-      }
     }
 
     if (toolName === "harness_milestone" || toolName === "harness_plan" || toolName === "harness_todo") {
