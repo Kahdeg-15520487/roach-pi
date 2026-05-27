@@ -10,8 +10,8 @@ import { homedir } from "os";
 import { join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { discoverAgents, type SubagentContextMode } from "./agents.js";
-import { runAgent, mapWithConcurrencyLimit, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, resolveDepthConfig, getCycleViolations, spawnAsync } from "./subagent.js";
-import { emptyUsage, isResultError, isResultSuccess, getResultSummaryText, type AsyncDependency, type AsyncRunRecord, type SingleResult, type SubagentDetails } from "./types.js";
+import { runAgent, mapWithConcurrencyLimit, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, resolveDepthConfig, getCycleViolations } from "./subagent.js";
+import { emptyUsage, isResultError, isResultSuccess, getResultSummaryText, type SingleResult, type SubagentDetails } from "./types.js";
 import { renderCall, renderResult } from "./render.js";
 import { parsePlan } from "./plan-parser.js";
 import { buildValidatorPrompt } from "./validator-template.js";
@@ -42,7 +42,6 @@ import { createHarnessState, type HarnessState } from "./harness-state.js";
 import { fetchUrlToMarkdown } from "./webfetch/utils.js";
 import { PI_ENABLE_TEAM_MODE_ENV, PI_TEAM_WORKER_ENV, cleanupActiveTeamTmuxResources, formatTeamRunSummary, runTeam, type TeamBackend, type TeamRunSummary } from "./team.js";
 import { defaultTeamRunStateRoot, listTeamRuns, readTeamRunRecord, writeTeamRunRecord, type StaleTaskResumeMode } from "./team-state.js";
-import { getDefaultRegistry } from "./async-registry.js";
 import { buildTeamCommandPrompt, getTeamArgumentCompletions, isTeamFollowUpCommand, parseTeamArgs } from "./team-command.js";
 import { renderWebfetchCall, renderWebfetchResult } from "./webfetch/render.js";
 import { registerHarnessTools } from "./harness-tools.js";
@@ -377,15 +376,6 @@ export default function (pi: ExtensionAPI) {
     worktree: Type.Optional(Type.Boolean({ description: "Run parallel tasks in isolated git worktrees and capture per-task diffs." })),
     planFile: Type.Optional(Type.String({ description: "Path to plan file. Required when agent is plan-validator — the validator prompt is built from this file, not from the task field." })),
     planTaskId: Type.Optional(Type.Number({ description: "Task number in the plan file to validate (e.g. 1 for Task 1). Required when agent is plan-validator." })),
-    async: Type.Optional(Type.Boolean({ description: "Execute in background, return runId immediately. Only works with single mode (agent + task)." })),
-    asyncDependency: Type.Optional(stringEnum(["background", "needed-before-final"], {
-      description: 'Agent-declared dependency for async:true runs. Use "needed-before-final" when the lead must wait for this answer before finalizing.',
-    })),
-    action: Type.Optional(stringEnum(["status", "interrupt", "wait", "mark-background"], {
-      description: 'Run management action. "status" lists or inspects runs; "interrupt" stops a run; "wait" blocks until a run completes and returns its result; "mark-background" explicitly marks a run as not needed for the final response.',
-    })),
-    id: Type.Optional(Type.String({ description: "Run ID for status/interrupt/wait/mark-background actions." })),
-    waitTimeoutMs: Type.Optional(Type.Number({ description: "Maximum milliseconds for action:\"wait\" before returning a timeout. Default 600000. Set 0 to wait indefinitely." })),
   });
 
   type AgentScope = "user" | "project" | "both";
@@ -430,47 +420,9 @@ export default function (pi: ExtensionAPI) {
     worktree?: boolean;
     planFile?: string;
     planTaskId?: number;
-    async?: boolean;
-    asyncDependency?: AsyncDependency;
-    action?: "status" | "interrupt" | "wait" | "mark-background";
-    id?: string;
-    waitTimeoutMs?: number;
   };
 
   const makeDetails = (mode: "single" | "parallel") => (results: SingleResult[]): SubagentDetails => ({ mode, results });
-
-  const isAsyncRunBlockingFinal = (record: AsyncRunRecord): boolean =>
-    (record.status === "spawning" || record.status === "running") && record.dependency !== "background";
-
-  const formatAsyncGuardRun = (record: AsyncRunRecord): string => {
-    const elapsed = Math.round(record.progress.elapsedMs / 1000);
-    const dependency = record.dependency ?? "unclassified";
-    const task = record.task.replace(/\s+/g, " ").slice(0, 100);
-    return `- ${record.runId} [${record.status}/${dependency}] ${record.agent}: ${task}${record.task.length > 100 ? "..." : ""} (${elapsed}s)`;
-  };
-
-  const buildAsyncFinalGuardText = (records: AsyncRunRecord[]): string => [
-    "⛔ Async subagent final-response guard",
-    "",
-    "A final assistant response was blocked because async subagent runs are still active and have not been explicitly marked as background.",
-    "Before finalizing, choose one action for each run:",
-    "- `subagent` with `action:\"wait\"` and `id` to join and retrieve the result.",
-    "- `subagent` with `action:\"status\"` and `id` to inspect progress/result.",
-    "- `subagent` with `action:\"interrupt\"` and `id` to stop it.",
-    "- `subagent` with `action:\"mark-background\"` and `id` only if the final response does not depend on it.",
-    "",
-    "Active blocking async runs:",
-    ...records.map(formatAsyncGuardRun),
-  ].join("\n");
-
-  const hasToolCallContent = (message: any): boolean =>
-    Array.isArray(message?.content) && message.content.some((part: any) => part?.type === "toolCall");
-
-  const replaceAssistantMessageText = (message: any, text: string): any => ({
-    ...message,
-    content: [{ type: "text", text }],
-    stopReason: message?.stopReason === "toolUse" ? message.stopReason : "stop",
-  });
 
   const TeamParams = Type.Object({
     goal: Type.Optional(Type.String({ description: "Goal for the lightweight native team run. Omit only in follow-up command mode." })),
@@ -646,8 +598,6 @@ export default function (pi: ExtensionAPI) {
         "ONLY use these exact agent names — do NOT invent or guess agent names: explorer, worker, planner, plan-worker, plan-validator, plan-compliance, reviewer-feasibility, reviewer-architecture, reviewer-risk, reviewer-bug, reviewer-security, reviewer-performance, reviewer-test-coverage, reviewer-consistency, reviewer-verifier, review-synthesis.",
         "All agents use the default model. Do NOT specify or mention specific models (no Haiku, Sonnet, etc.).",
         "For codebase exploration: use 'explorer'. For general execution: use 'worker'. For plan execution: use 'plan-compliance' → 'plan-worker' → 'plan-validator'.",
-        "Use async:true only when the lead can safely continue. If the subagent answer is needed before the final response, set asyncDependency:'needed-before-final' and later call action:'wait' with the returned run id. Unclassified async runs also block final responses until resolved.",
-        "Async starts return a run id and durable output file path when available; use action:'wait' to join rather than guessing. Use action:'status' for inspection, action:'interrupt' to stop a running async run, and action:'mark-background' only when you explicitly choose to finalize without that run's result.",
         "For ultraplan milestone reviews: dispatch all 3 reviewers in parallel: reviewer-feasibility, reviewer-architecture, reviewer-risk.",
         "For ultrareview code reviews: dispatch 10 tasks in parallel (5 reviewers × 2 seeds): reviewer-bug, reviewer-security, reviewer-performance, reviewer-test-coverage, reviewer-consistency. Then run reviewer-verifier on the aggregated findings, then review-synthesis on the verified result.",
         "Max 12 parallel tasks with 10 concurrent. Chain mode stops on first error.",
@@ -726,138 +676,6 @@ export default function (pi: ExtensionAPI) {
             return taskText;
           }
         };
-
-        if (params.action) {
-          const registry = getDefaultRegistry();
-          if (params.action === "status") {
-            if (params.id) {
-              const record = registry.getStatus(params.id);
-              if (!record) {
-                return {
-                  content: [{ type: "text" as const, text: `No run found with id: ${params.id}` }],
-                  details: undefined,
-                };
-              }
-              const statusText = [
-                `Run: ${record.runId}`,
-                `Agent: ${record.agent}`,
-                `Task: ${record.task}`,
-                `Status: ${record.status}`,
-                record.dependency ? `Dependency: ${record.dependency}` : null,
-                `Backend: ${record.backend}`,
-                record.outputFile ? `Output file: ${record.outputFile}` : null,
-                record.pid ? `PID: ${record.pid}` : null,
-                `Elapsed: ${Math.round(record.progress.elapsedMs / 1000)}s`,
-                record.progress.lastActivity ? `Last tool: ${record.progress.lastActivity.name}` : null,
-                `Tokens: in=${record.progress.usage.input} out=${record.progress.usage.output}`,
-                record.result ? `Exit code: ${record.result.exitCode}` : null,
-                record.result ? `Result:\n${getResultSummaryText(record.result, maxOutput)}` : null,
-              ].filter(Boolean).join("\n");
-              return {
-                content: [{ type: "text" as const, text: statusText }],
-                details: undefined,
-              };
-            }
-            const runs = registry.listActive();
-            if (runs.length === 0) {
-              return {
-                content: [{ type: "text" as const, text: "No active async runs." }],
-                details: undefined,
-              };
-            }
-            const statusText = runs.map(r =>
-              `${r.runId} [${r.status}${r.dependency ? `/${r.dependency}` : ""}] ${r.agent}: ${r.task.slice(0, 60)}${r.task.length > 60 ? "..." : ""} (${Math.round(r.progress.elapsedMs / 1000)}s)`
-            ).join("\n");
-            return {
-              content: [{ type: "text" as const, text: `Active runs (${runs.length}):\n${statusText}` }],
-              details: undefined,
-            };
-          }
-          if (params.action === "mark-background") {
-            if (!params.id) {
-              return {
-                content: [{ type: "text" as const, text: "Error: mark-background action requires id parameter." }],
-                details: undefined,
-                isError: true,
-              };
-            }
-            const success = registry.setDependency(params.id, "background");
-            if (!success) {
-              return {
-                content: [{ type: "text" as const, text: `No run found with id: ${params.id}` }],
-                details: undefined,
-                isError: true,
-              };
-            }
-            const record = registry.getStatus(params.id);
-            return {
-              content: [{ type: "text" as const, text: `Run ${params.id} marked as background. It will no longer block final assistant responses.` }],
-              details: record ? { ...makeDetails("single")([]), asyncRun: record } : undefined,
-            };
-          }
-          if (params.action === "interrupt") {
-            if (!params.id) {
-              return {
-                content: [{ type: "text" as const, text: "Error: interrupt action requires id parameter." }],
-                details: undefined,
-                isError: true,
-              };
-            }
-            const success = registry.interrupt(params.id);
-            if (!success) {
-              return {
-                content: [{ type: "text" as const, text: `Failed to interrupt run ${params.id}. Run not found or not in a running state.` }],
-                details: undefined,
-                isError: true,
-              };
-            }
-            return {
-              content: [{ type: "text" as const, text: `Interrupt signal sent to run ${params.id}.` }],
-              details: undefined,
-            };
-          }
-          if (params.action === "wait") {
-            if (!params.id) {
-              return {
-                content: [{ type: "text" as const, text: "Error: wait action requires id parameter." }],
-                details: undefined,
-                isError: true,
-              };
-            }
-            const waitTimeoutMs = params.waitTimeoutMs ?? 600_000;
-            const { record, timedOut } = await registry.waitForCompletion(params.id, waitTimeoutMs);
-            if (!record) {
-              return {
-                content: [{ type: "text" as const, text: `No run found with id: ${params.id}` }],
-                details: undefined,
-                isError: true,
-              };
-            }
-            if (timedOut) {
-              return {
-                content: [{ type: "text" as const, text: `Timed out waiting for run ${record.runId}. Current status: ${record.status}.` }],
-                details: { ...makeDetails("single")([]), asyncRun: record },
-                isError: true,
-              };
-            }
-            if (!record.result) {
-              const failed = record.status !== "completed";
-              registry.markConsumed(record.runId);
-              return {
-                content: [{ type: "text" as const, text: `Run ${record.runId} finished with status ${record.status} and no captured result.` }],
-                details: { ...makeDetails("single")([]), asyncRun: record },
-                isError: failed,
-              };
-            }
-            registry.markConsumed(record.runId);
-            const failed = isResultError(record.result);
-            return {
-              content: [{ type: "text" as const, text: getResultSummaryText(record.result, maxOutput) }],
-              details: { ...makeDetails("single")([record.result]), asyncRun: record },
-              isError: failed || undefined,
-            };
-          }
-        }
 
         if (depthConfig.preventCycles) {
           const requested: string[] = [];
@@ -1000,57 +818,7 @@ export default function (pi: ExtensionAPI) {
         }
 
         if (agent && task) {
-          if (params.async && (params.tasks || params.chain)) {
-            return {
-              content: [{ type: "text" as const, text: "Error: async mode only works with single mode (agent + task). Cannot combine with tasks or chain." }],
-              details: makeDetails("single")([]),
-              isError: true,
-            };
-          }
-
           const effectiveTask = await effectiveTaskFor(agent, task, params.planFile, params.planTaskId);
-
-          if (params.async) {
-            const asyncAgent = isDisciplineAgent(agent)
-              ? augmentAgentWithKarpathy(findAgent(agent))
-              : findAgent(agent);
-            const registry = getDefaultRegistry();
-            const { runId } = await spawnAsync({
-              agent: asyncAgent,
-              agentName: agent,
-              task: effectiveTask,
-              cwd: cwd || defaultCwd,
-              depthConfig,
-              sandbox: sandboxFor(cwd || defaultCwd),
-              makeDetails: makeDetails("single"),
-              maxOutput,
-              output,
-              reads,
-              progress,
-              contextMode: context,
-            }, registry, params.asyncDependency);
-            const dependencyText = params.asyncDependency === "background"
-              ? "\nDependency: background. This run will not block final assistant responses."
-              : params.asyncDependency === "needed-before-final"
-                ? "\nDependency: needed-before-final. Call subagent action:\"wait\" with this run id before finalizing dependent work."
-                : "\nDependency: unclassified. Final assistant responses will be blocked until this run completes, is interrupted, or is explicitly marked with action:\"mark-background\".";
-            return {
-              content: [{ type: "text" as const, text: `Async run started: ${runId}${dependencyText}` }],
-              details: {
-                ...makeDetails("single")([{
-                  agent,
-                  agentSource: "unknown" as const,
-                  task: effectiveTask,
-                  exitCode: 0,
-                  messages: [],
-                  stderr: "",
-                  usage: emptyUsage(),
-                  asyncRunId: runId,
-                }]),
-                asyncRun: registry.getStatus(runId),
-              },
-            };
-          }
 
           const singleAgent = isDisciplineAgent(agent)
             ? augmentAgentWithKarpathy(findAgent(agent))
@@ -1174,33 +942,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async (_event, _ctx) => {
     harnessProgress = null;
-    getDefaultRegistry().abortAll();
     await cleanupActiveTeamTmuxResources();
-  });
-
-  const registry = getDefaultRegistry();
-  registry.setCompletionNotifier((record) => {
-    if (!registry.markNotified(record.runId)) return;
-    const statusEmoji = record.status === "completed" ? "✅" : record.status === "failed" ? "❌" : "⚠️";
-    const summary = record.result
-      ? `Exit code: ${record.result.exitCode}`
-      : `Status: ${record.status}`;
-    const elapsed = Math.round(record.progress.elapsedMs / 1000);
-    const outputFile = record.outputFile || record.result?.artifacts?.outputFile;
-    const resultText = record.result ? getResultSummaryText(record.result, record.result.maxOutput) : "";
-    const usage = record.result?.usage ?? record.progress.usage;
-    pi.sendUserMessage(
-      `<async-subagent-notification>\n` +
-      `<run_id>${record.runId}</run_id>\n` +
-      `<agent>${record.agent}</agent>\n` +
-      `<status>${record.status}</status>\n` +
-      `<summary>${statusEmoji} Async subagent completed: ${record.agent} — ${summary} | ${elapsed}s</summary>\n` +
-      (outputFile ? `<output_file>${outputFile}</output_file>\n` : "") +
-      (resultText ? `<result>${resultText}</result>\n` : "") +
-      `<usage><input>${usage.input}</input><output>${usage.output}</output><turns>${usage.turns}</turns></usage>\n` +
-      `</async-subagent-notification>`,
-      { deliverAs: "followUp" },
-    );
   });
 
   pi.on("resources_discover", async (_event, _ctx) => {
@@ -1320,12 +1062,7 @@ Do not start multi-step implementation without a clear understanding of what the
       delegationInfo = `\n\n## Delegation Guards\n- Current depth: ${depthConfig.currentDepth}, max: ${depthConfig.maxDepth}\n- Cycle prevention: ${depthConfig.preventCycles ? "enabled" : "disabled"}\n- Ancestor stack: ${depthConfig.ancestorStack.length > 0 ? depthConfig.ancestorStack.join(" -> ") : "(root)"}\n\n## Available Subagents\n${agentList}`;
     }
 
-    const blockingAsyncRuns = getDefaultRegistry().listActive().filter(isAsyncRunBlockingFinal);
-    const asyncGuidance = blockingAsyncRuns.length > 0
-      ? `\n\n## Active Async Subagent Guard\nYou have active async subagent runs that block final responses until resolved or explicitly marked as background. Before giving a final answer, call the subagent tool with action:\"wait\", action:\"status\", action:\"interrupt\", or action:\"mark-background\" for each blocking run.\n\n${blockingAsyncRuns.map(formatAsyncGuardRun).join("\n")}`
-      : "";
-
-    const combined = phaseGuidance + idleGuidance + asyncGuidance;
+    const combined = phaseGuidance + idleGuidance;
     // Always inject progress tracking rules (they are unconditional).
     // Phase guidance and delegation info are conditional.
     return {
@@ -2022,23 +1759,6 @@ Do not start multi-step implementation without a clear understanding of what the
         cacheStats.totalCacheRead += usage.cacheRead;
       }
     }
-
-    if (
-      msg.role === "assistant" &&
-      msg.stopReason !== "toolUse" &&
-      !hasToolCallContent(msg)
-    ) {
-      const blockingAsyncRuns = getDefaultRegistry().listActive().filter(isAsyncRunBlockingFinal);
-      if (blockingAsyncRuns.length > 0) {
-        const guardText = buildAsyncFinalGuardText(blockingAsyncRuns);
-        pi.sendUserMessage(
-          `${guardText}\n\nContinue by explicitly choosing the next subagent action for each blocking run before finalizing.`,
-          { deliverAs: "followUp" },
-        );
-        return { message: replaceAssistantMessageText(msg, guardText) };
-      }
-    }
-
   });
 
   pi.on("tool_execution_start", async (event, ctx) => {
@@ -2089,7 +1809,6 @@ Do not start multi-step implementation without a clear understanding of what the
     activeTools.running.clear();
     toolCallArgsById.clear();
     planTaskIdsByToolCallId.clear();
-    await getDefaultRegistry().sweepStalePersisted(join(ctx.cwd, ".pi", "agent", "runs"));
     const branchEntries = ctx.sessionManager?.getBranch?.() ?? [];
 
     // Restore simple todo state from session branch entries

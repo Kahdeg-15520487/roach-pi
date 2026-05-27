@@ -32,7 +32,6 @@ vi.mock("../ui-settings.js", () => ({
 
 import extension from "../index.js";
 import { resolveAgenticUiSettings } from "../ui-settings.js";
-import { getDefaultRegistry } from "../async-registry.js";
 
 const originalSubagentEnv = {
   PI_SUBAGENT_DEPTH: process.env.PI_SUBAGENT_DEPTH,
@@ -145,7 +144,7 @@ describe("Extension Registration", () => {
     expect(tool.name).toBe("subagent");
     expect(tool.promptSnippet).toBeDefined();
     expect(tool.promptGuidelines).toBeDefined();
-    expect(tool.promptGuidelines.length).toBe(10);
+    expect(tool.promptGuidelines.length).toBe(8);
     expect(tool.renderCall).toBeTypeOf("function");
     expect(tool.renderResult).toBeTypeOf("function");
   });
@@ -828,12 +827,11 @@ describe("Validator Information Barrier", () => {
     // Verify schema has planFile and planTaskId properties
     expect(schema.properties.planFile).toBeDefined();
     expect(schema.properties.planTaskId).toBeDefined();
-    expect(schema.properties.asyncDependency).toMatchObject({
-      type: "string",
-      enum: ["background", "needed-before-final"],
-    });
-    expect(schema.properties.action.enum).toEqual(["status", "interrupt", "wait", "mark-background"]);
-    expect(schema.properties.waitTimeoutMs).toBeDefined();
+    expect(schema.properties.async).toBeUndefined();
+    expect(schema.properties.asyncDependency).toBeUndefined();
+    expect(schema.properties.action).toBeUndefined();
+    expect(schema.properties.id).toBeUndefined();
+    expect(schema.properties.waitTimeoutMs).toBeUndefined();
     expect(schema.properties.tasks.items.properties.planFile).toBeDefined();
     expect(schema.properties.tasks.items.properties.planTaskId).toBeDefined();
     expect(schema.properties.chain.items.properties.planFile).toBeDefined();
@@ -848,187 +846,7 @@ describe("Validator Information Barrier", () => {
     expect(subagentTool).toBeDefined();
     const guidelines = subagentTool!.promptGuidelines || [];
     expect(guidelines.some((g: string) => g.includes("planFile") && g.includes("planTaskId"))).toBe(true);
-    expect(guidelines.some((g: string) => g.includes("asyncDependency") && g.includes("needed-before-final"))).toBe(true);
-    expect(guidelines.some((g: string) => g.includes("action:'wait'"))).toBe(true);
-    expect(guidelines.some((g: string) => g.includes("action:'mark-background'"))).toBe(true);
-  });
-});
-
-describe("subagent async wait action", () => {
-  it("returns a completed async run result", async () => {
-    const { mockPi, tools } = createMockPi();
-    extension(mockPi);
-    const subagentTool = tools.get("subagent");
-    expect(subagentTool).toBeDefined();
-
-    const registry = getDefaultRegistry();
-    const runId = registry.register("explorer", "inspect issue", "native", undefined, "needed-before-final");
-    registry.complete(runId, "completed", {
-      agent: "explorer",
-      agentSource: "bundled",
-      task: "inspect issue",
-      exitCode: 0,
-      messages: [{ role: "assistant", content: [{ type: "text", text: "root cause found" }] }],
-      stderr: "",
-      usage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 3, turns: 1 },
-    });
-
-    const result = await subagentTool.execute(
-      "wait-call",
-      { action: "wait", id: runId },
-      undefined,
-      undefined,
-      { cwd: process.cwd(), hasUI: false, ui: {} },
-    );
-
-    expect(result.content[0].text).toBe("root cause found");
-    expect(result.details.asyncRun.runId).toBe(runId);
-    expect(result.details.results[0].asyncRunId).toBeUndefined();
-  });
-
-  it("marks an async run as background through the subagent action", async () => {
-    const { mockPi, tools } = createMockPi();
-    extension(mockPi);
-    const subagentTool = tools.get("subagent");
-    expect(subagentTool).toBeDefined();
-
-    const registry = getDefaultRegistry();
-    const runId = registry.register("explorer", "inspect issue", "native", undefined, "needed-before-final");
-    registry.update(runId, { status: "running" });
-
-    const result = await subagentTool.execute(
-      "mark-background-call",
-      { action: "mark-background", id: runId },
-      undefined,
-      undefined,
-      { cwd: process.cwd(), hasUI: false, ui: {} },
-    );
-
-    expect(result.content[0].text).toContain("marked as background");
-    expect(registry.getStatus(runId)!.dependency).toBe("background");
-    registry.complete(runId, "interrupted");
-  });
-
-  it("status includes durable output file when present", async () => {
-    const { mockPi, tools } = createMockPi();
-    extension(mockPi);
-    const subagentTool = tools.get("subagent");
-    const registry = getDefaultRegistry();
-    const runId = registry.register("explorer", "inspect issue", "native", undefined, "needed-before-final");
-    registry.update(runId, { status: "running", outputFile: "/tmp/pi-run/output.md" });
-
-    const result = await subagentTool.execute(
-      "status-call",
-      { action: "status", id: runId },
-      undefined,
-      undefined,
-      { cwd: process.cwd(), hasUI: false, ui: {} },
-    );
-
-    expect(result.content[0].text).toContain("Output file: /tmp/pi-run/output.md");
-    registry.complete(runId, "interrupted");
-  });
-
-  it("wait marks terminal runs consumed", async () => {
-    const { mockPi, tools } = createMockPi();
-    extension(mockPi);
-    const subagentTool = tools.get("subagent");
-    const registry = getDefaultRegistry();
-    const runId = registry.register("explorer", "inspect issue", "native", undefined, "needed-before-final");
-    registry.complete(runId, "completed", {
-      agent: "explorer",
-      agentSource: "bundled",
-      task: "inspect issue",
-      exitCode: 0,
-      messages: [{ role: "assistant", content: [{ type: "text", text: "done" }] }],
-      stderr: "",
-      usage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 3, turns: 1 },
-    });
-
-    await subagentTool.execute("wait-call", { action: "wait", id: runId }, undefined, undefined, { cwd: process.cwd(), hasUI: false, ui: {} });
-    expect(registry.getStatus(runId)?.consumedAt).toBeTruthy();
-  });
-
-  it("completion notification is structured and marks run notified", () => {
-    const { mockPi } = createMockPi();
-    extension(mockPi);
-    const registry = getDefaultRegistry();
-    const runId = registry.register("explorer", "inspect issue", "native", undefined, "needed-before-final");
-    registry.complete(runId, "completed", {
-      agent: "explorer",
-      agentSource: "bundled",
-      task: "inspect issue",
-      exitCode: 0,
-      messages: [{ role: "assistant", content: [{ type: "text", text: "done" }] }],
-      stderr: "",
-      usage: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 3, turns: 1 },
-      artifacts: { outputFile: "/tmp/pi-run/output.md" },
-    });
-
-    expect(mockPi.sendUserMessage).toHaveBeenCalledWith(
-      expect.stringContaining("<async-subagent-notification>"),
-      { deliverAs: "followUp" },
-    );
-    expect(mockPi.sendUserMessage).toHaveBeenCalledWith(
-      expect.stringContaining("<output_file>/tmp/pi-run/output.md</output_file>"),
-      { deliverAs: "followUp" },
-    );
-    expect(registry.getStatus(runId)?.notified).toBe(true);
-  });
-});
-
-describe("async final-response guard", () => {
-  it("replaces final assistant text and queues a follow-up while blocking async runs are active", async () => {
-    const { mockPi, events } = createMockPi();
-    extension(mockPi);
-
-    const registry = getDefaultRegistry();
-    const runId = registry.register("explorer", "investigate async behavior", "native", undefined, "needed-before-final");
-    registry.update(runId, { status: "running" });
-
-    const handler = events.get("message_end")!.at(-1)!;
-    const result = await handler(
-      {
-        message: {
-          role: "assistant",
-          content: [{ type: "text", text: "Here is the final answer." }],
-          stopReason: "stop",
-        },
-      },
-      { cwd: process.cwd() },
-    );
-
-    expect(result.message.content[0].text).toContain("Async subagent final-response guard");
-    expect(result.message.content[0].text).toContain(runId);
-    expect(mockPi.sendUserMessage).toHaveBeenCalledWith(
-      expect.stringContaining(runId),
-      { deliverAs: "followUp" },
-    );
-    registry.complete(runId, "interrupted");
-  });
-
-  it("does not replace final assistant text after the run is marked background", async () => {
-    const { mockPi, events } = createMockPi();
-    extension(mockPi);
-
-    const registry = getDefaultRegistry();
-    const runId = registry.register("explorer", "long background task", "native", undefined, "background");
-    registry.update(runId, { status: "running" });
-
-    const handler = events.get("message_end")!.at(-1)!;
-    const result = await handler(
-      {
-        message: {
-          role: "assistant",
-          content: [{ type: "text", text: "Here is the final answer." }],
-          stopReason: "stop",
-        },
-      },
-      { cwd: process.cwd() },
-    );
-
-    expect(result).toBeUndefined();
-    registry.complete(runId, "interrupted");
+    expect(guidelines.some((g: string) => g.includes("async") || g.includes("action:'wait'") || g.includes("mark-background"))).toBe(false);
   });
 });
 

@@ -4,44 +4,6 @@ export interface ToolActivity {
   timestamp: number;
 }
 
-export type AsyncRunStatus = "spawning" | "running" | "completed" | "failed" | "interrupted";
-export type AsyncDependency = "background" | "needed-before-final";
-
-export interface RunProgress {
-  lastActivity?: ToolActivity;
-  usage: UsageStats;
-  elapsedMs: number;
-  startedAt: number;
-}
-
-export interface AsyncRunRecord {
-  schemaVersion: 1;
-  runId: string;
-  agent: string;
-  task: string;
-  dependency?: AsyncDependency;
-  status: AsyncRunStatus;
-  pid?: number;
-  pgid?: number;
-  paneId?: string;
-  sessionName?: string;
-  tmuxBinary?: string;
-  outputFile?: string;
-  notified?: boolean;
-  notificationSentAt?: string;
-  consumedAt?: string;
-  completedAt?: string;
-  progress: RunProgress;
-  result?: SingleResult;
-  createdAt: string;
-  updatedAt: string;
-  backend: "native" | "tmux";
-  retryAttempt?: number;
-  maxRetries?: number;
-  lastRetryAt?: string;
-  retryReason?: string;
-}
-
 /** Aggregated token usage from a subagent run. */
 export interface UsageStats {
   input: number;
@@ -115,14 +77,12 @@ export interface SingleResult {
   worktree?: WorktreeMetadata;
   terminal?: TerminalMetadata;
   lastActivity?: ToolActivity;
-  asyncRunId?: string;
 }
 
 /** Metadata attached to every tool result for rendering. */
 export interface SubagentDetails {
   mode: "single" | "parallel";
   results: SingleResult[];
-  asyncRun?: AsyncRunRecord;
 }
 
 /** A display-friendly representation of a message part. */

@@ -5,12 +5,11 @@ import { join, basename, dirname, relative } from "path";
 import { randomBytes } from "crypto";
 import { existsSync } from "fs";
 import type { AgentConfig, SubagentContextMode } from "./agents.js";
-import type { AsyncDependency, SingleResult, SubagentDetails } from "./types.js";
+import type { SingleResult, SubagentDetails } from "./types.js";
 import { emptyUsage, getFinalOutput } from "./types.js";
-import { createArtifactContext, getArtifactOutputPath, readDeclaredFiles, readFilePrefix, type ArtifactContext } from "./artifacts.js";
+import { createArtifactContext, readDeclaredFiles, readFilePrefix, type ArtifactContext } from "./artifacts.js";
 import { captureWorktreeDiff, cleanupWorktree, createWorktree, type WorktreeContext } from "./worktree.js";
 import { processPiJsonLine } from "./runner-events.js";
-import { getDefaultRegistry, type RunRegistry } from "./async-registry.js";
 import { getInheritedCliArgs } from "./runner-cli.js";
 import { getDefaultApprovalStore } from "./sandbox/approval-store.js";
 import { resolveSandboxLaunch } from "./sandbox/executor.js";
@@ -1126,80 +1125,4 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
     if (tmpPromptPath) await unlink(tmpPromptPath).catch(() => {});
     await sandboxCleanup?.().catch(() => undefined);
   }
-}
-
-export interface SpawnAsyncResult {
-  runId: string;
-  status: "spawning" | "running";
-}
-
-export async function spawnAsync(
-  opts: RunAgentOptions,
-  registry: RunRegistry = getDefaultRegistry(),
-  dependency?: AsyncDependency,
-): Promise<SpawnAsyncResult> {
-  const abortController = new AbortController();
-  const runId = registry.register(
-    opts.agentName,
-    opts.task,
-    opts.executionMode === "tmux" ? "tmux" : "native",
-    abortController,
-    dependency,
-  );
-  const asyncOutput = opts.output ?? opts.agent?.output ?? "output.md";
-  const outputFile = getArtifactOutputPath({
-    cwd: opts.cwd,
-    rootRunId: runId,
-    runId,
-    agentName: opts.agentName,
-    output: asyncOutput,
-  });
-  registry.update(runId, { outputFile });
-
-  Promise.resolve().then(async () => {
-    const mergedOpts: RunAgentOptions = {
-      ...opts,
-      output: asyncOutput,
-      ownership: {
-        runId,
-        rootRunId: runId,
-        owner: opts.agentName,
-      },
-      signal: abortController.signal,
-      onLifecycleEvent: (event) => {
-        if (event.phase === "spawned") {
-          registry.update(runId, {
-            pid: event.pid,
-            pgid: event.pgid,
-            status: "running",
-            paneId: event.paneId,
-            sessionName: event.sessionName,
-            tmuxBinary: event.tmuxBinary,
-          });
-        }
-        opts.onLifecycleEvent?.(event);
-      },
-      onUpdate: (partial) => {
-        const r = partial.details?.results?.[0];
-        if (r) {
-          registry.update(runId, {
-            progress: {
-              lastActivity: r.lastActivity,
-              usage: r.usage,
-            },
-          });
-        }
-        opts.onUpdate?.(partial);
-      },
-    };
-
-    try {
-      const result = await runAgent(mergedOpts);
-      registry.complete(runId, result.exitCode === 0 ? "completed" : "failed", result);
-    } catch {
-      registry.complete(runId, "failed");
-    }
-  });
-
-  return { runId, status: "spawning" };
 }
