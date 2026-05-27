@@ -40,6 +40,16 @@ describe("subagent call rendering", () => {
     expect(text).toContain("missing task");
     expect(text).not.toContain("subagent ...");
   });
+
+  it("renders action status without missing single-mode fields", () => {
+    const rendered = renderCall({ action: "status" }, theme, { argsComplete: true });
+    const text = rendered.render(80).join("\n");
+
+    expect(text).toContain("subagent status");
+    expect(text).toContain("all active runs");
+    expect(text).not.toContain("missing agent");
+    expect(text).not.toContain("missing task");
+  });
 });
 
 describe("formatTokens", () => {

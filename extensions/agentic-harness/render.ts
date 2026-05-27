@@ -157,6 +157,19 @@ export function renderCall(
     return new Text(text, 0, 0);
   }
 
+  const action = previewText(args.action, 30);
+  if (action) {
+    const id = previewText(args.id, 50);
+    let preview = "run management";
+    if (action === "status") preview = id ? `run ${id}` : "all active runs";
+    else if (action === "wait" || action === "interrupt" || action === "mark-background") preview = id ? `run ${id}` : "missing run id";
+    else if (id) preview = `run ${id}`;
+
+    let text = theme.fg("toolTitle", theme.bold("subagent ")) + theme.fg("accent", action);
+    text += `\n  ${theme.fg("dim", preview)}`;
+    return new Text(text, 0, 0);
+  }
+
   // Single mode
   const isReceivingArgs = context.argsComplete === false;
   const agentName = previewText(args.agent, 40) ?? (isReceivingArgs ? "starting..." : "missing agent");
