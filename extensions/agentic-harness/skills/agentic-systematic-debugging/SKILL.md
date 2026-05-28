@@ -83,8 +83,8 @@ Follow the steps below in order.
 
 **If reproduction environment is too complex to set up:**
 
-→ Ask the user: "The reproduction environment seems complex. Would you like me to create a plan for setting up the test environment?"
-→ If the user agrees, use the `agentic-plan-crafting` skill to plan the environment setup.
+→ Ask the user: "The reproduction environment seems complex. Would you like me to create a setup goal for the test environment?"
+→ If the user agrees, create or update a `/goal` entry for the setup work.
 → If the user declines, document the required environment and proceed with caution (gathering evidence via logs, code analysis, etc.).
 
 ---

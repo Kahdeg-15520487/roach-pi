@@ -1,11 +1,11 @@
 ---
 name: agentic-clarification
-description: Use when a user's request is vague, ambiguous, or underspecified. Launches an iterative Q&A loop to resolve ambiguity while a subagent explores the codebase in parallel. Outputs a clear, well-scoped context brief so the user can plan sharply. Triggers on "I want to...", "I need...", "let's build...", "can you help me...", "we should...", or any request where the full scope isn't immediately clear.
+description: Use when a user's request is vague, ambiguous, or underspecified. Launches an iterative Q&A loop to resolve ambiguity while a subagent explores the codebase in parallel. Outputs a Goal Contract for the durable /goal runtime. Triggers on "I want to...", "I need...", "let's build...", "can you help me...", "we should...", or any request where the full scope isn't immediately clear.
 ---
 
-# Clarification Through Iterative Discovery
+# Runtime-Enforced Deep Clarification
 
-Narrows vague user requests into well-defined work scopes. Runs questions and code exploration in parallel to bring the user to a state where they can plan sharply.
+Narrows vague user requests into a durable Goal Contract through a deep-interview loop. Runs questions and code exploration in parallel, records hidden runtime state with `clarification_state`, and blocks Goal Contract handoff until the checklist/ambiguity gate passes.
 
 ## Core Principle
 
@@ -15,9 +15,10 @@ Ambiguity does not resolve in one pass. Multiple rounds of questions and code ex
 
 1. **One question per message.** Never bundle multiple questions into a single message.
 2. **Always use subagents.** While conversing with the user, dispatch subagents to explore the codebase in response to the user's answers.
-3. **Do not start implementation until you can say "this is clear enough."** Understanding must be complete at the codebase level.
-4. **Every question must narrow scope.** Do not repeat questions at the same level of ambiguity.
-5. **Never dump raw code exploration results on the user.** Summarize findings in the context of the user's question.
+3. **Use `clarification_state` whenever available.** Record every user answer, explorer finding, checklist update, unresolved ambiguity, accepted risk, and final Goal Contract draft.
+4. **Do not start implementation until the runtime gate says `Gate: PASS`.** Understanding must be complete at the user-intent and codebase levels.
+5. **Every question must narrow scope.** Do not repeat questions at the same level of ambiguity.
+6. **Never dump raw code exploration results on the user.** Summarize findings in the context of the user's question.
 
 ## When To Use
 
@@ -28,7 +29,7 @@ Ambiguity does not resolve in one pass. Multiple rounds of questions and code ex
 
 ## When NOT To Use
 
-- The request is already specific and clear (proceed to implementation or plan skill)
+- The request is already specific and clear (create or activate a `/goal` directly)
 - The scope is obvious, like a simple bug fix or config change
 - The user explicitly says "don't ask questions, just do it"
 
@@ -46,15 +47,21 @@ Ask the user questions to resolve ambiguity.
 - Ask "which case?" rather than "why?" — draw out concrete scenarios, not abstract intent
 - If an answer contradicts a previous one, flag it immediately and realign
 
-**Question sequence guide:**
+**Deep-interview coverage guide:**
 
-1. **Purpose**: "What is the end goal of this work?" (what they want to achieve)
-2. **Scope**: "What's included and what's excluded?" (draw boundaries)
-3. **Constraints**: "Are there existing constraints that affect this?" (time, compatibility, dependencies)
-4. **Success criteria**: "What should the state look like when this is done?" (verifiable outcome)
-5. **Priority**: "If there are multiple paths, what matters most?" (trade-offs)
+The hidden runtime checklist must have concrete content for every item before handoff:
 
-After each question, briefly update "what we've established so far."
+1. **Objective**: the durable end goal in one sentence.
+2. **Scope**: what is included.
+3. **Non-goals**: what is explicitly excluded.
+4. **Constraints**: compatibility, time, dependencies, user preferences, migration boundaries.
+5. **Success criteria**: observable acceptance conditions.
+6. **Evidence required**: tests, commands, screenshots, logs, docs, or manual checks the verifier should expect.
+7. **Risks**: known blockers, regression risks, rollback concerns.
+8. **Edge cases**: boundary inputs, failure paths, platform differences, permissions, concurrency.
+9. **Technical context**: affected files, existing patterns, integration points, and test coverage.
+
+After each answer, briefly update "what we've established so far," call `clarification_state` to record the answer/checklist changes, and decide the next single most important ambiguity.
 
 ### Track 2: Codebase Exploration (Technical Context)
 
@@ -79,7 +86,7 @@ Call the `subagent` tool in single mode:
 ```
 agent: "explorer"
 task: |
-  The user has requested [summarized request].
+  The user has requested [summarized request for a future Goal Contract].
 
   Investigate and report on:
   1. Related files and the role of each
@@ -99,7 +106,7 @@ When the subagent returns findings:
 2. If technical constraints unknown to the user are discovered, reflect them in the next question
 3. If a conflict with existing code is likely, notify the user
 
-## Putting It Together: The Loop
+## Putting It Together: The Goal Contract Loop
 
 ```dot
 digraph agentic-clarification {
@@ -133,17 +140,28 @@ digraph agentic-clarification {
 4. Pick the next question (prioritize the one that most affects scope)
 5. If needed, launch additional subagents (when previous exploration revealed new areas to investigate)
 
-## Output: Context Brief
+## Runtime Gate
 
-When ambiguity is sufficiently resolved, present the user with a Context Brief. This is the skill's final deliverable.
+Before producing the final Goal Contract:
 
-**Context Brief format:**
+1. Call `clarification_state` with `action=status`.
+2. If the result contains `Gate: BLOCKED`, ask exactly one follow-up question for the highest-impact unresolved item, or use `subagent` if the missing information is technical.
+3. Only when the result contains `Gate: PASS`, call `clarification_state` with `action=draft_goal_contract` using the exact Goal Contract fields.
+4. Then present the Goal Contract to the user and stop.
+
+Do not expose the hidden checklist as a separate command workflow. The user should experience questions and the final contract, not state management.
+
+## Output: Goal Contract
+
+When the runtime gate passes, present the user with a Goal Contract. This is the skill's final deliverable.
+
+**Goal Contract format:**
 
 ```markdown
-## Context Brief: [Task Title]
+## Goal Contract: [Task Title]
 
-### Goal
-[One-sentence task goal]
+### Objective
+[One-sentence objective for the durable goal]
 
 ### Scope
 - **In scope**: [Included work]
@@ -155,47 +173,30 @@ When ambiguity is sufficiently resolved, present the user with a Context Brief. 
 - Affected areas
 - Existing patterns to follow
 
-### Constraints
-[Identified constraints]
-- External constraints
-- Technical constraints
-- Time/priority constraints
-
 ### Success Criteria
-[Specific criteria for the completed state]
+- [Verifiable criterion for the completed state]
+
+### Constraints
+- [External, technical, time, priority, or compatibility constraint]
+
+### Evidence Required
+- [Evidence that must be added before requesting completion]
+
+### Risks
+- [Risk, blocker, or uncertainty the goal runtime should track]
+
+### Suggested Initial Subgoals
+1. [Initial subgoal title and objective]
 
 ### Open Questions (if any)
 [Questions still open — unresolved but not blocking]
 
-### Complexity Assessment
-
-Assess task complexity using these 5 signals. Score each signal, then determine the routing.
-
-| Signal | Low (1) | Medium (2) | High (3) |
-|--------|---------|-----------|----------|
-| **Scope breadth** | Single feature or component | 2-3 related components | 4+ components or cross-cutting concerns |
-| **File impact** | ≤3 files | 4-8 files | 9+ files or across 3+ directories |
-| **Interface boundaries** | Works within existing interfaces | Extends existing interfaces | Defines new interfaces or modifies contracts |
-| **Dependency depth** | No ordering constraints | Linear dependency chain | Branching dependencies requiring DAG |
-| **Risk surface** | No integration risk | Internal integration between components | External systems, schema changes, backward compatibility |
-
-**Score:** [sum of signals, range 5-15]
-**Verdict:** [Simple (5-8) | Complex (9-15)]
-**Rationale:** [1-2 sentences explaining the dominant complexity factor]
-
-### Suggested Next Step
-[Auto-determined by Complexity Assessment verdict — see Routing Rules below]
+### Handoff
+Run this after the user approves this Goal Contract:
+- `/goal`
 ```
 
-**Save the Context Brief to a file:**
-
-```
-docs/engineering-discipline/context/YYYY-MM-DD-<topic>-brief.md
-```
-
-(If the user specifies a different location, use that location.)
-
-Show the Context Brief in the conversation first, then save it to a file after the user approves. This file is used directly as input for the `agentic-plan-crafting` skill.
+Show the Goal Contract in the conversation and stop. Do not begin implementation from this skill.
 
 ## Red Flags
 
@@ -215,7 +216,7 @@ Stop and recalibrate if any of these occur:
 | Five questions in one message | The user gives shallow answers. Ambiguity persists. |
 | Questions without code exploration | Scope can narrow in a direction that conflicts with existing code |
 | Showing full subagent output to the user | Too much noise. Provide only the summary relevant to the user's context |
-| Deciding "that's enough" unilaterally | Always present the Context Brief to the user and get confirmation |
+| Deciding "that's enough" unilaterally | Always present the Goal Contract to the user and get confirmation |
 | Starting implementation | This skill ends at "clear context," not "implemented code" |
 
 ## Minimal Checklist
@@ -224,47 +225,18 @@ Self-check at the end of each cycle:
 
 - [ ] Did one ambiguity get resolved this cycle?
 - [ ] Is subagent exploration in progress or complete?
-- [ ] Is the next question based on previous answers?
+- [ ] Was `clarification_state` updated with the answer/finding/checklist change?
+- [ ] Is the next question based on previous answers and the current gate blockers?
 - [ ] Has progress been clearly communicated to the user?
 
-## Routing Rules
+## Handoff Rules
 
-After the Context Brief is approved, the **Complexity Assessment verdict** determines the next skill:
+After the Goal Contract is approved, hand the work to the durable goal runtime:
 
-| Verdict | Route | Rationale |
-|---------|-------|-----------|
-| **Simple** (score 5-8) | `agentic-plan-crafting` | Task fits in a single plan cycle. Direct planning is sufficient. |
-| **Complex** (score 9-15) | `agentic-milestone-planning` | Task requires multiple plan cycles. Milestone decomposition needed before planning. |
+- Tell the user to run `/goal`; the runtime will create, activate, continue, and verify automatically.
+- Do not ask the user to type `/goal create`, `/goal activate`, target ids, or other setup commands for the normal flow.
+- Do not route to another workflow skill from clarification.
+- Do not start implementation from clarification.
+- If further exploration is needed, continue the Q&A loop within this skill.
 
-**Override:** The user can always override the routing. If the user says "just plan it" for a complex task, route to `agentic-plan-crafting`. If the user says "break it into milestones" for a simple task, route to `agentic-milestone-planning`.
-
-**Edge case (score 8-9):** Present both options to the user with a recommendation. Example: "This scores 9 — borderline complex. I recommend agentic-milestone-planning because [dominant factor], but agentic-plan-crafting could work if [condition]. Which do you prefer?"
-
-The "Suggested Next Step" field in the Context Brief must reflect this routing:
-
-- Simple: "Proceed to `agentic-plan-crafting` — task fits in a single plan cycle."
-- Complex: "Proceed to `agentic-milestone-planning` — task requires milestone decomposition for multi-phase execution."
-- Borderline: "Recommend `agentic-milestone-planning` (score 9), but `agentic-plan-crafting` is viable if [condition]. User choice needed."
-
-## Transition
-
-Once the Context Brief is approved by the user, route based on the Complexity Assessment:
-
-- **Simple** (score 5-8) → `agentic-plan-crafting` skill — single-cycle implementation planning
-- **Complex** (score 9-15) → `agentic-milestone-planning` skill — multi-phase milestone decomposition, then `agentic-long-run` for execution
-- **Borderline** (score 8-9) → present both options with recommendation, user decides
-- If further exploration is needed → continue the Q&A loop within the `agentic-clarification` skill itself
-- If the scope is already trivial and planning is unnecessary → direct implementation
-
-This skill itself **does not invoke the next skill.** It ends by presenting the Context Brief, saving it to a file, and suggesting the routed next step.
-
-**Context Brief → agentic-plan-crafting mapping:**
-
-| Context Brief field | agentic-plan-crafting input |
-|---|---|
-| Goal | Plan header "Goal" |
-| Scope (In/Out) | Plan header "Scope of Work" |
-| Technical Context | Basis for "Architecture" + "Technical Stack" + file-structure mapping |
-| Constraints | Reflect constraints during task decomposition |
-| Success Criteria | Self-review criteria |
-| Open Questions | Reflect as assumptions in the plan, then confirm with the user |
+The Goal Contract is the only final output of this skill. It must include enough success criteria and evidence required for the goal verifier to judge completion later.

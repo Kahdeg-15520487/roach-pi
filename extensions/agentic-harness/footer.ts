@@ -45,7 +45,7 @@ export interface ActiveTools {
   running: Map<string, string | ActiveToolStatus>;
 }
 
-type FooterSegmentId = "logo" | "path" | "git" | "model" | "thinking" | "context" | "statuses" | "tools" | "cache";
+type FooterSegmentId = "logo" | "path" | "git" | "model" | "thinking" | "context" | "goal" | "statuses" | "tools" | "cache";
 
 type FooterSegmentColor = ThemeColor | "logo" | "path" | "git" | "model" | "thinking" | "context" | "default";
 
@@ -64,6 +64,7 @@ type FooterPresetDefinition = {
 export interface FooterOptions {
   preset?: FooterPresetName;
   glyphs?: FooterGlyphMode;
+  getGoalSummary?: () => string | undefined;
 }
 
 // Nerd Font Icons
@@ -78,6 +79,7 @@ const ICONS = {
   cache: "󰆼",
   tool: "󰒓",
   status: "󰄬",
+  goal: "󰓎",
 } as const;
 
 const ICONS_PLAIN = {
@@ -90,6 +92,7 @@ const ICONS_PLAIN = {
   cache: "⊡",
   tool: "▶",
   status: "●",
+  goal: "◎",
 } as const;
 
 let useNerdIcons = false;
@@ -101,9 +104,9 @@ function getIcons(glyphs?: FooterGlyphMode) {
 // Presets
 
 const FOOTER_PRESET_DEFINITIONS: Record<FooterPresetName, FooterPresetDefinition> = {
-  default:  { lines: [["logo", "model", "thinking", "path", "git", "context", "cache", "tools", "statuses"]] },
-  compact:  { lines: [["logo", "model", "path", "git", "context", "cache", "statuses"]] },
-  minimal:  { lines: [["logo", "path", "git", "context", "statuses"]] },
+  default:  { lines: [["logo", "goal", "model", "thinking", "path", "git", "context", "cache", "tools", "statuses"]] },
+  compact:  { lines: [["logo", "goal", "model", "path", "git", "context", "cache", "statuses"]] },
+  minimal:  { lines: [["logo", "goal", "path", "git", "context", "statuses"]] },
 };
 
 // Helpers
@@ -228,6 +231,7 @@ export class RoachFooter implements Component {
   private tui: Pick<TUI, "requestRender"> | null;
   private preset: FooterPresetName;
   private glyphs: FooterGlyphMode;
+  private getGoalSummary: () => string | undefined;
   private unsubscribeTodo: (() => void) | null = null;
   private spinnerTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -247,6 +251,7 @@ export class RoachFooter implements Component {
     this.activeTools = activeTools;
     this.preset = options.preset ?? "default";
     this.glyphs = options.glyphs ?? (useNerdIcons ? "nerd" : "plain");
+    this.getGoalSummary = options.getGoalSummary ?? (() => undefined);
     this.tui = tui;
     this.unsubscribeTodo = subscribeOnChange(() => this.schedulePlanRender());
     this.updateSpinnerTimer();
@@ -401,6 +406,11 @@ export class RoachFooter implements Component {
 
     segs.set("context", { id: "context", text: ctxPart, icon: icons.context, color: "context", priority: 0 });
     segs.set("cache", { id: "cache", text: `cache ${cacheRate}%`, icon: icons.cache, color: cacheColor, priority: 5 });
+
+    const goalSummary = this.getGoalSummary();
+    if (goalSummary) {
+      segs.set("goal", { id: "goal", text: goalSummary, icon: icons.goal, color: "accent", priority: 1 });
+    }
 
     const statuses = this.footerData.getExtensionStatuses?.() ?? new Map<string, string>();
     const statusText = getExtensionStatusText(statuses);

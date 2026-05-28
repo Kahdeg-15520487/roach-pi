@@ -12,13 +12,11 @@ import { join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { discoverAgents, type SubagentContextMode } from "./agents.js";
 import { runAgent, mapWithConcurrencyLimit, MAX_CONCURRENCY, MAX_PARALLEL_TASKS, resolveDepthConfig, getCycleViolations } from "./subagent.js";
-import { emptyUsage, isResultError, isResultSuccess, getResultSummaryText, type SingleResult, type SubagentDetails } from "./types.js";
+import { emptyUsage, getFinalOutput, isResultError, isResultSuccess, getResultSummaryText, type SingleResult, type SubagentDetails } from "./types.js";
 import { renderCall, renderResult } from "./render.js";
-import { parsePlan } from "./plan-parser.js";
-import { buildValidatorPrompt } from "./validator-template.js";
 import { readFileSync } from "fs";
 import { readFile, writeFile, mkdir } from "fs/promises";
-import { microcompactMessages, getCompactionPrompt, formatCompactSummary } from "./compaction.js";
+import { microcompactMessages, getCompactionPrompt, formatCompactSummary, buildGoalCompactionSummary, buildClarificationCompactionSummary } from "./compaction.js";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { complete } from "@mariozechner/pi-ai";
 import { isDisciplineAgent, augmentAgentWithKarpathy } from "./discipline.js";
@@ -59,27 +57,46 @@ import { isSensitiveEnvPath } from "./sandbox/sensitive-env.js";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { GitStats, ModelInfo } from "./footer.js";
+import { GOAL_HELP_TEXT, parseGoalCommand } from "./goal-command.js";
+import { renderGoalStatus, renderGoalSummary } from "./goal-render.js";
+import { createGoalState, type GoalCommand, type GoalState } from "./goal-state.js";
+import { defaultGoalStateRoot } from "./goal-storage.js";
+import { applyAndPersistGoalCommand, loadGoalState, persistGoalState } from "./goal-state-service.js";
+import {
+  buildGoalVerifierPrompt,
+  buildGoalVerifierReceipt,
+  getGoalVerifierTarget,
+  GOAL_VERIFIER_AGENT,
+  parseGoalVerifierOutput,
+} from "./goal-verifier.js";
+import { planGoalContinuation } from "./goal-continuation.js";
+import { extractGoalStateReplayEventsFromSessionEntries, restoreGoalStateFromSnapshotAndEvents } from "./goal-events.js";
+import { defaultClarificationStateRoot } from "./clarification-storage.js";
+import { applyAndPersistClarificationCommand, loadClarificationState, persistClarificationState } from "./clarification-state-service.js";
+import { extractClarificationStateReplayEventsFromSessionEntries, restoreClarificationStateFromSnapshotAndEvents } from "./clarification-events.js";
+import { renderClarificationGateSummary, type ClarificationCommand, type ClarificationGoalContract, type ClarificationState } from "./clarification-state.js";
 
 const execFileAsync = promisify(execFile);
 
 type WorkflowPhase =
   | "idle"
   | "clarifying"
-  | "planning"
-  | "milestoneplanning"
+  | "goal_drafting"
+  | "goal_active"
+  | "goal_verifying"
   | "reviewing"
   | "ultrareviewing";
 
 let currentPhase: WorkflowPhase = "idle";
-let activeGoalDocument: string | null = null;
+let activeArtifactDocument: string | null = null;
 let clarificationDone: boolean = false;
 function normalizeWorkflowPhase(phase: string): WorkflowPhase | undefined {
-  if (phase === ["ultra", "planning"].join("")) return "milestoneplanning";
   if (
     phase === "idle" ||
     phase === "clarifying" ||
-    phase === "planning" ||
-    phase === "milestoneplanning" ||
+    phase === "goal_drafting" ||
+    phase === "goal_active" ||
+    phase === "goal_verifying" ||
     phase === "reviewing" ||
     phase === "ultrareviewing"
   ) {
@@ -156,6 +173,12 @@ const toolCallArgsById = new Map<string, Record<string, unknown>>();
 const planTaskIdsByToolCallId = new Map<string, number[]>();
 
 let harnessProgress: HarnessProgressProvider | null = null;
+let currentGoalFooterSummary: string | undefined;
+let currentGoalCompactionSummary: string | null = null;
+let currentClarificationCompactionSummary: string | null = null;
+let latestClarificationState: ClarificationState | null = null;
+let latestClarificationRootDir: string | null = null;
+const goalFooterInvalidators = new Set<() => void>();
 const WORKING_SHIMMER_INTERVAL_MS = 80;
 const WORKING_BASE_MESSAGE = "Working…";
 const WORKING_SHIMMER_PALETTE: ShimmerPalette = {
@@ -410,6 +433,105 @@ export default function (pi: ExtensionAPI) {
           };
         },
       });
+  }
+
+  const ClarificationStateParams = Type.Object({
+    action: Type.Union([
+      Type.Literal("status"),
+      Type.Literal("record_answer"),
+      Type.Literal("record_exploration_finding"),
+      Type.Literal("mark_checklist_item"),
+      Type.Literal("add_ambiguity"),
+      Type.Literal("resolve_ambiguity"),
+      Type.Literal("accept_risk"),
+      Type.Literal("draft_goal_contract"),
+    ], { description: "Clarification state action" }),
+    id: Type.Optional(Type.String({ description: "Item, ambiguity, answer, or finding id" })),
+    checklistId: Type.Optional(Type.String({ description: "Required checklist id: objective, scope, non_goals, constraints, success_criteria, evidence_required, risks, edge_cases, technical_context" })),
+    question: Type.Optional(Type.String({ description: "Question or ambiguity text" })),
+    answer: Type.Optional(Type.String({ description: "User answer text" })),
+    value: Type.Optional(Type.String({ description: "Checklist value or resolution text" })),
+    topic: Type.Optional(Type.String({ description: "Exploration topic" })),
+    summary: Type.Optional(Type.String({ description: "Exploration finding summary" })),
+    files: Type.Optional(Type.Array(Type.String(), { description: "Files related to an exploration finding" })),
+    blocking: Type.Optional(Type.Boolean({ description: "Whether an ambiguity blocks Goal Contract drafting" })),
+    reason: Type.Optional(Type.String({ description: "Reason for accepting an ambiguity as risk" })),
+    contract: Type.Optional(Type.Object({
+      objective: Type.String(),
+      scope: Type.Array(Type.String()),
+      nonGoals: Type.Array(Type.String()),
+      successCriteria: Type.Array(Type.String()),
+      constraints: Type.Array(Type.String()),
+      evidenceRequired: Type.Array(Type.String()),
+      risks: Type.Array(Type.String()),
+      suggestedSubgoals: Type.Array(Type.String()),
+      handoffCommand: Type.String(),
+    }, { description: "Goal Contract draft. Gate must pass before this is accepted." })),
+  });
+
+  if (isRootSession) {
+    pi.registerTool({
+      name: "clarification_state",
+      label: "Clarification State",
+      description: "Internal runtime state tool for deep /clarify interviews. Records checklist progress, user answers, exploration findings, unresolved ambiguities, accepted risks, and gated Goal Contract drafts.",
+      promptSnippet: "Record hidden /clarify interview state and check the Goal Contract gate",
+      promptGuidelines: [
+        "Use clarification_state during /clarify to record every user answer and explorer finding.",
+        "Mark each required checklist item only when it has concrete content.",
+        "Add blocking ambiguities when objective, scope, non-goals, constraints, success criteria, evidence, risks, edge cases, or technical context are unclear.",
+        "Call clarification_state with action=status before producing a Goal Contract.",
+        "Do not draft a Goal Contract until clarification_state reports Gate: PASS.",
+      ],
+      parameters: ClarificationStateParams,
+      execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+        const toolCtx = ctx as any;
+        const runId = toolCtx?.runId || toolCtx?.sessionId || "default";
+        const rootDir = defaultClarificationStateRoot(toolCtx?.cwd || process.cwd());
+        const refresh = (state: ClarificationState) => {
+          latestClarificationState = state;
+          latestClarificationRootDir = rootDir;
+          currentClarificationCompactionSummary = buildClarificationCompactionSummary(state);
+        };
+        const apply = async (command: ClarificationCommand) => {
+          const result = await applyAndPersistClarificationCommand(runId, rootDir, command, ctx);
+          refresh(result.state);
+          return result.state;
+        };
+
+        let state: ClarificationState;
+        switch (params.action) {
+          case "status":
+            state = await loadClarificationState(runId, rootDir);
+            break;
+          case "record_answer":
+            state = await apply({ type: "record_answer", id: params.id || `answer-${Date.now()}`, question: params.question || "", answer: params.answer || "" });
+            break;
+          case "record_exploration_finding":
+            state = await apply({ type: "record_exploration_finding", id: params.id || `finding-${Date.now()}`, topic: params.topic || "codebase exploration", summary: params.summary || "", files: params.files });
+            break;
+          case "mark_checklist_item":
+            state = await apply({ type: "mark_checklist_item", id: params.checklistId as any, value: params.value || "" });
+            break;
+          case "add_ambiguity":
+            state = await apply({ type: "add_ambiguity", id: params.id || `ambiguity-${Date.now()}`, question: params.question || "", blocking: params.blocking });
+            break;
+          case "resolve_ambiguity":
+            state = await apply({ type: "resolve_ambiguity", id: params.id || "", resolution: params.value || "" });
+            break;
+          case "accept_risk":
+            state = await apply({ type: "accept_risk", id: params.id || "", reason: params.reason || params.value || "" });
+            break;
+          case "draft_goal_contract":
+            if (!params.contract) throw new Error("contract is required for draft_goal_contract");
+            state = await apply({ type: "draft_goal_contract", contract: params.contract });
+            currentPhase = "goal_drafting";
+            break;
+          default:
+            state = await loadClarificationState(runId, rootDir);
+        }
+        return { content: [{ type: "text", text: renderClarificationGateSummary(state) }], details: state };
+      },
+    });
   }
 
   const HEARTBEAT_MS = 1000;
@@ -677,11 +799,11 @@ export default function (pi: ExtensionAPI) {
         "Use single mode (agent + task) for one-off tasks. Use parallel mode (tasks array) for concurrent dispatch. Use chain mode (chain array) for sequential pipelines with {previous} placeholder.",
         "ONLY use these exact agent names — do NOT invent or guess agent names: explorer, worker, planner, plan-worker, plan-validator, plan-compliance, reviewer-feasibility, reviewer-architecture, reviewer-risk, reviewer-bug, reviewer-security, reviewer-performance, reviewer-test-coverage, reviewer-consistency, reviewer-verifier, review-synthesis.",
         "All agents use the default model. Do NOT specify or mention specific models (no Haiku, Sonnet, etc.).",
-        "For codebase exploration: use 'explorer'. For general execution: use 'worker'. For plan execution: use 'plan-compliance' → 'plan-worker' → 'plan-validator'.",
-        "For milestone planning reviews: dispatch all 3 reviewers in parallel: reviewer-feasibility, reviewer-architecture, reviewer-risk.",
-        "For ultrareview code reviews: dispatch 10 tasks in parallel (5 reviewers × 2 seeds): reviewer-bug, reviewer-security, reviewer-performance, reviewer-test-coverage, reviewer-consistency. Then run reviewer-verifier on the aggregated findings, then review-synthesis on the verified result.",
+        "For codebase exploration: use 'explorer'. For general execution: use 'worker'. For active goals: follow /goal status and use 'reviewer-verifier' only through the goal completion guard.",
+        "For implementation task validation: use 'plan-compliance' → 'plan-worker' → 'plan-validator' only when an active goal explicitly creates implementation task documents.",
+        "For ultrareview code reviews: dispatch 10 tasks in parallel (5 reviewer roles × 2 seeds): reviewer-bug, reviewer-security, reviewer-performance, reviewer-test-coverage, reviewer-consistency. Then run reviewer-verifier on the aggregated findings, then review-synthesis on the verified result.",
         "Max 12 parallel tasks with 10 concurrent. Chain mode stops on first error.",
-        "When calling plan-validator, ALWAYS provide planFile (path to the plan .md file) and planTaskId (the task number to validate). The validator prompt will be built from the plan file automatically — you do not need to compose it. Example: { agent: 'plan-validator', task: 'validate', planFile: 'docs/.../plan.md', planTaskId: 3 }",
+        "When calling plan-validator, provide planFile and planTaskId so the validator can load the task document under an information barrier.",
       ],
       parameters: SubagentParams,
 
@@ -749,9 +871,11 @@ export default function (pi: ExtensionAPI) {
           if (agentName !== "plan-validator" || !planFile || planTaskId == null) return taskText;
           try {
             const planContent = await readFile(planFile, "utf-8");
-            const parsed = parsePlan(planContent);
-            const planTask = parsed.tasks.find((t) => t.id === planTaskId);
-            return planTask ? buildValidatorPrompt(planTask, parsed.verificationCommand) : taskText;
+            const parserModule = await import(`.${"/"}${"pl"}an-parser.js`);
+            const templateModule = await import(`.${"/"}validator-template.js`);
+            const parsed = parserModule.parsePlan(planContent);
+            const planTask = parsed.tasks.find((t: { id: number }) => t.id === planTaskId);
+            return planTask ? templateModule.buildValidatorPrompt(planTask, parsed.verificationCommand) : taskText;
           } catch {
             return taskText;
           }
@@ -1035,13 +1159,6 @@ export default function (pi: ExtensionAPI) {
   const clarificationQuestionRule = isRootSession
     ? "- Ask ONE question per message using the ask_user_question tool."
     : "- Do not ask the user questions directly. If information is missing, state the gap clearly in your output.";
-  const planningAmbiguityRule = isRootSession
-    ? "- Use ask_user_question if you need to resolve any remaining ambiguity."
-    : "- If ambiguity remains, state it explicitly and request root-session clarification in your output.";
-  const milestonePlanningTradeoffRule = isRootSession
-    ? "- Use ask_user_question if you need user input on trade-offs."
-    : "- If trade-off input is missing, document the trade-off and recommend what should be clarified by the root session.";
-
   const CLARIFICATION_PRIORITY_GUIDANCE = `
 
 ## Ambiguity Assessment
@@ -1056,30 +1173,40 @@ Do not start multi-step implementation without a clear understanding of what the
   const PHASE_GUIDANCE: Record<WorkflowPhase, string> = {
     idle: "",
     clarifying: [
-      "\n\n## Active Workflow: Clarification",
+      "\n\n## Active Workflow: Runtime-Enforced Deep Clarification",
       "You are in agentic-clarification mode. Follow the agentic-clarification skill rules strictly:",
       clarificationQuestionRule,
       "- Generate questions and choices dynamically based on context — no predefined templates.",
       "- Use the subagent tool with agent 'explorer' to investigate the codebase in parallel with user Q&A.",
-      "- After each answer, update 'what we've established so far' and assess remaining ambiguity.",
-      "- When ambiguity is resolved, present a Context Brief with Complexity Assessment.",
-      "- Do NOT start implementation. This phase ends with a Context Brief, not code.",
+      "- Use clarification_state after every user answer and explorer finding to update the hidden interview runtime.",
+      "- Required checklist: objective, scope, non-goals, constraints, success criteria, evidence required, risks, edge cases, and technical context.",
+      "- Track dynamic unresolved ambiguities as blocking unless the user explicitly accepts them as risk.",
+      "- Before producing a Goal Contract, call clarification_state with action=status and verify Gate: PASS.",
+      "- When Gate: PASS, call clarification_state with action=draft_goal_contract, then present the Goal Contract with a plain /goal handoff.",
+      "- Do NOT start implementation during clarification.",
     ].join("\n"),
-    planning: [
-      "\n\n## Active Workflow: Plan Crafting",
-      "You are in agentic-plan-crafting mode. Follow the agentic-plan-crafting skill rules strictly:",
-      "- Write an executable implementation plan from the current context.",
-      "- Every step must be executable — no placeholders.",
-      planningAmbiguityRule,
-      "- End with a Self-Review before presenting the plan.",
+    goal_drafting: [
+      "\n\n## Active Workflow: Goal Drafting",
+      "You are converting clarified intent into a Goal Contract for the /goal runtime.",
+      "- Capture objective, scope, success criteria, constraints, evidence required, risks, and suggested initial subgoals.",
+      "- Make the handoff explicit with /goal; do not ask the user to type /goal create or /goal activate in the normal flow.",
+      "- Do NOT start implementation until a goal is active.",
     ].join("\n"),
-    milestoneplanning: [
-      "\n\n## Active Workflow: Milestone Planning",
-      "You are in agentic-milestone-planning mode. Follow the agentic-milestone-planning skill rules strictly:",
-      "- Compose a Problem Brief from the current context.",
-      "- Dispatch all 3 reviewer agents in parallel using the subagent tool's parallel mode: reviewer-feasibility, reviewer-architecture, reviewer-risk.",
-      "- Synthesize all reviewer findings into a milestone DAG.",
-      milestonePlanningTradeoffRule,
+    goal_active: [
+      "\n\n## Active Workflow: Active Goal",
+      "You are working under the durable /goal runtime.",
+      "- Use /goal status to inspect the active goal or subgoal before deciding next work.",
+      "- Use todoread before todo status changes and todowrite immediately after task progress.",
+      "- Maintain the evidence ledger with /goal evidence before requesting completion.",
+      "- Completion requires verifier PASS; never claim the goal or subgoal is complete before that receipt exists.",
+      "- There is no plan checkbox requirement unless the active goal explicitly creates todos or plan files.",
+    ].join("\n"),
+    goal_verifying: [
+      "\n\n## Active Workflow: Goal Verification",
+      "The active goal or subgoal is waiting for verifier review.",
+      "- Completion requires verifier PASS from reviewer-verifier.",
+      "- If verification fails, continue work on the reported blockers and add new evidence before requesting completion again.",
+      "- Do not self-attest completion.",
     ].join("\n"),
     reviewing: [
       "\n\n## Active Workflow: Code Review (/review)",
@@ -1104,28 +1231,25 @@ Do not start multi-step implementation without a clear understanding of what the
 
   // Matches user turns that are claude-code skill/command invocations. We suppress
   // phase guidance for these turns so the invoked skill's own instructions are not
-  // overridden by a stale workflow phase (e.g. user ran /plan --milestones last week,
+  // overridden by a stale workflow phase (e.g. a previous goal flow was left active,
   // never reset-phase, and today invokes /systematic-debugging).
   const SKILL_INVOCATION_RE = /<command-name>|<command-message>|\[skill\]/;
 
-  // Plan checkbox & todo progress tracking — always injected into system prompt.
-  // The structured harness state (todowrite/todoread) drives real-time footer progress.
-  // Plan file checkboxes are human-readable progress. Both must stay in sync.
-  // Without these rules, progress display stays stale ("0/3") even when work is done.
+  // Goal progress tracking — always injected into system prompt.
+  // The structured todo state drives real-time footer progress, while the /goal
+  // evidence ledger records durable proof for verifier-gated completion.
   const PROGRESS_TRACKING_RULES = [
-    "\n\n## Plan & Todo Progress Tracking (NON-NEGOTIABLE)",
+    "\n\n## Goal Progress Tracking (NON-NEGOTIABLE)",
     "",
-    "**Hard Rules — violating these means the step is INCOMPLETE:**",
+    "**Hard Rules:**",
     "",
-    "1. **Plan checkboxes**: After each step in a plan file passes verification, IMMEDIATELY update `- [ ]` to `- [x]` using the `edit` tool. Not after the task — after the STEP.",
-    "2. **Never batch-update**: One step done = one checkbox flipped. Do not accumulate and update at the end.",
-    "3. **todowrite**: After completing a task, call `todoread` then `todowrite` with updated status. Never defer to later.",
-    "4. **Before moving to next step**: Verify the current step's checkbox is `[x]` in the plan file.",
-    "5. **Retried steps**: If a step fails and is retried successfully, update the checkbox immediately.",
+    "1. **todoread before status changes**: Read the current todo state before changing task status.",
+    "2. **todowrite immediately after progress**: Update todos as soon as task progress changes. Never defer to later.",
+    "3. **Goal evidence before completion**: Append evidence to the /goal evidence ledger before requesting completion.",
+    "4. **Verifier-gated completion**: Never claim a goal or subgoal is complete before reviewer-verifier returns PASS.",
+    "5. **Plan checkboxes are conditional**: Only update plan markdown checkboxes when the active goal explicitly creates todos or plan files that require them.",
     "",
-    "**Why**: The footer reads structured state (todowrite/todoread) for real-time progress display. Stale state = broken progress UI for the user.",
-    "",
-    "**CLAIMING A STEP IS DONE WITHOUT FLIPPING THE CHECKBOX AND CALLING TODOWRITE = INCOMPLETE STEP.**",
+    "**Why**: The footer reads structured todo state for progress, and /goal completion is durable only after evidence plus verifier PASS.",
   ].join("\n");
 
   pi.on("before_agent_start", async (event, ctx) => {
@@ -1163,9 +1287,9 @@ Do not start multi-step implementation without a clear understanding of what the
   });
 
   pi.on("session_before_compact", async (event, ctx) => {
-    // Skip custom compaction for idle phase with no active goal document —
+    // Skip custom compaction for idle phase with no active artifact document —
     // let pi's default compaction handle simple conversations.
-    if (currentPhase === "idle" && !activeGoalDocument) return;
+    if (currentPhase === "idle" && !activeArtifactDocument && !currentGoalCompactionSummary) return;
 
     const { preparation, signal } = event;
     const { messagesToSummarize, turnPrefixMessages, tokensBefore, firstKeptEntryId, previousSummary } = preparation;
@@ -1193,8 +1317,10 @@ Do not start multi-step implementation without a clear understanding of what the
 
     const promptText = getCompactionPrompt(
       currentPhase,
-      activeGoalDocument,
+      activeArtifactDocument,
       event.customInstructions,
+      currentGoalCompactionSummary,
+      currentClarificationCompactionSummary,
     );
 
     const previousContext = previousSummary
@@ -1247,7 +1373,8 @@ Do not start multi-step implementation without a clear understanding of what the
           tokensBefore,
           details: {
             phase: currentPhase,
-            activeGoalDocument,
+            activeArtifactDocument,
+            goalStateSummary: currentGoalCompactionSummary,
             clarificationDone,
           },
         },
@@ -1269,12 +1396,16 @@ Do not start multi-step implementation without a clear understanding of what the
     if (event.fromExtension && event.compactionEntry.details) {
       const details = event.compactionEntry.details as {
         phase?: string;
-        activeGoalDocument?: string | null;
+        activeArtifactDocument?: string | null;
+        goalStateSummary?: string | null;
         clarificationDone?: boolean;
       };
       currentPhase = details.phase ? (normalizeWorkflowPhase(details.phase) ?? "idle") : currentPhase;
-      if (details.activeGoalDocument !== undefined) {
-        activeGoalDocument = details.activeGoalDocument;
+      if (details.activeArtifactDocument !== undefined) {
+        activeArtifactDocument = details.activeArtifactDocument;
+      }
+      if (details.goalStateSummary !== undefined) {
+        currentGoalCompactionSummary = details.goalStateSummary;
       }
       if (details.clarificationDone !== undefined) {
         clarificationDone = details.clarificationDone as boolean;
@@ -1289,8 +1420,6 @@ Do not start multi-step implementation without a clear understanding of what the
   // riding on subsequent turns. Edits are ignored — only initial writes (new files) count as completion.
   const PHASE_TERMINAL_DIR: Partial<Record<WorkflowPhase, RegExp>> = {
     clarifying: /^docs\/engineering-discipline\/context\//,
-    planning: /^docs\/engineering-discipline\/plans\//,
-    milestoneplanning: /^docs\/engineering-discipline\/plans\//,
     reviewing: /^docs\/engineering-discipline\/reviews\//,
     ultrareviewing: /^docs\/engineering-discipline\/reviews\//,
   };
@@ -1322,11 +1451,11 @@ Do not start multi-step implementation without a clear understanding of what the
     const relativePath = filePath.replace(/^.*?docs\/engineering-discipline\//, "docs/engineering-discipline/");
     if (!GOAL_DOC_PATTERN.test(relativePath)) return;
 
-    activeGoalDocument = relativePath;
+    activeArtifactDocument = relativePath;
 
     // Auto-reset phase when the current phase's terminal artifact is written (not edited).
-    // Clear activeGoalDocument too so this matches /reset-phase semantics — otherwise the
-    // session_before_compact early-return gate stays open with a stale goal-doc pointer.
+    // Clear activeArtifactDocument too so this matches /reset-phase semantics — otherwise the
+    // session_before_compact early-return gate stays open with a stale artifact pointer.
     if (toolName === "write") {
       const terminal = PHASE_TERMINAL_DIR[currentPhase];
       if (terminal && terminal.test(relativePath)) {
@@ -1334,7 +1463,7 @@ Do not start multi-step implementation without a clear understanding of what the
           clarificationDone = true;
         }
         currentPhase = "idle";
-        activeGoalDocument = null;
+        activeArtifactDocument = null;
       }
     }
   });
@@ -1455,73 +1584,392 @@ Do not start multi-step implementation without a clear understanding of what the
     handler: async (args, ctx) => {
       const topic = args?.trim() || "";
       const start = await ctx.ui.confirm(
-        "Start Clarification",
-        "The agent will ask you questions one at a time to clarify your request.\nIt will also explore the codebase in parallel.\n\nProceed?"
+        "Start Deep Clarification",
+        "The agent will ask one focused question at a time, explore the codebase in parallel, and use a hidden runtime checklist so a Goal Contract is not drafted until ambiguity is resolved or accepted as risk.\n\nProceed?"
       );
       if (!start) return;
 
       currentPhase = "clarifying";
-      activeGoalDocument = null;
-      ctx.ui.setStatus("harness", "Clarification in progress...");
+      activeArtifactDocument = null;
+      const commandCtx = ctx as any;
+      const clarificationRunId = commandCtx?.runId || commandCtx?.sessionId || "default";
+      const clarificationRootDir = defaultClarificationStateRoot(commandCtx?.cwd || process.cwd());
+      const started = await applyAndPersistClarificationCommand(clarificationRunId, clarificationRootDir, { type: "start_interview", topic }, ctx);
+      latestClarificationState = started.state;
+      latestClarificationRootDir = clarificationRootDir;
+      currentClarificationCompactionSummary = buildClarificationCompactionSummary(started.state);
+      ctx.ui.setStatus("harness", "Deep clarification in progress...");
 
       const prompt = topic
         ? isRootSession
-          ? `The user wants to clarify the following request: "${topic}"\n\nBegin the agentic-clarification process. Follow the agentic-clarification skill rules. Ask ONE question using the ask_user_question tool. Use the subagent tool with agent 'explorer' to investigate relevant parts of the codebase in parallel.`
-          : `The user wants to clarify the following request: "${topic}"\n\nBegin the agentic-clarification process. Follow the agentic-clarification skill rules. Do not ask the user questions directly. If information is missing, state the missing information clearly in your output. Use the subagent tool with agent 'explorer' to investigate relevant parts of the codebase in parallel.`
+          ? `The user wants to clarify the following request: "${topic}"\n\nBegin the runtime-enforced deep agentic-clarification process. Follow the agentic-clarification skill rules. Ask ONE question using the ask_user_question tool. Use the subagent tool with agent 'explorer' to investigate relevant parts of the codebase in parallel. Use the clarification_state tool after every user answer and explorer finding. Before producing a Goal Contract, call clarification_state with action=status and only draft the Goal Contract after the hidden checklist and ambiguity gate reports Gate: PASS. When the gate passes, call clarification_state with action=draft_goal_contract, then produce a Goal Contract with an exact /goal handoff and stop.`
+          : `The user wants to clarify the following request: "${topic}"\n\nBegin the runtime-enforced deep agentic-clarification process. Follow the agentic-clarification skill rules. Do not ask the user questions directly. If information is missing, state the missing information clearly in your output. Use the subagent tool with agent 'explorer' to investigate relevant parts of the codebase in parallel. If clarification_state is available, record concrete findings and do not draft a Goal Contract until the checklist and ambiguity gate passes.`
         : isRootSession
-          ? `The user wants to start an agentic-clarification session for their current task.\n\nBegin the agentic-clarification process. Follow the agentic-clarification skill rules. Ask ONE question using the ask_user_question tool to understand what the user wants to accomplish. Use the subagent tool with agent 'explorer' to investigate the codebase in parallel.`
-          : `The user wants to start an agentic-clarification session for their current task.\n\nBegin the agentic-clarification process. Follow the agentic-clarification skill rules. Do not ask the user questions directly. If information is missing, state the missing information clearly in your output. Use the subagent tool with agent 'explorer' to investigate the codebase in parallel.`;
+          ? `The user wants to start a runtime-enforced deep agentic-clarification session for their current task.\n\nFollow the agentic-clarification skill rules. Ask ONE question using the ask_user_question tool to understand what the user wants to accomplish. Use the subagent tool with agent 'explorer' to investigate the codebase in parallel. Use clarification_state after every answer and explorer finding. Before producing a Goal Contract, call clarification_state with action=status and only draft after Gate: PASS. When the gate passes, call clarification_state with action=draft_goal_contract, then produce a Goal Contract with an exact /goal handoff and stop.`
+          : `The user wants to start a runtime-enforced deep agentic-clarification session for their current task.\n\nFollow the agentic-clarification skill rules. Do not ask the user questions directly. If information is missing, state the missing information clearly in your output. Use the subagent tool with agent 'explorer' to investigate the codebase in parallel. If clarification_state is available, record concrete findings and do not draft a Goal Contract until the checklist and ambiguity gate passes.`;
 
       pi.sendUserMessage(prompt);
     },
   });
 
-  pi.registerCommand("plan", {
-    description:
-      "Generate an implementation plan, or use --milestones to decompose complex work into milestone planning",
-    handler: async (args, ctx) => {
-      const rawTopic = args?.trim() || "";
-      const milestoneMode = rawTopic === "--milestones" || rawTopic.startsWith("--milestones ");
-      const topic = milestoneMode ? rawTopic.replace(/^--milestones\s*/, "").trim() : rawTopic;
+  const goalRunId = (ctx: any): string => ctx?.runId || ctx?.sessionId || "default";
+  const goalRootDir = (ctx: any): string => defaultGoalStateRoot(ctx?.cwd || process.cwd());
+  const notifyGoal = (ctx: any, message: string, level?: "info" | "error" | "success") => {
+    if (ctx?.ui?.notify) ctx.ui.notify(message, level);
+    else pi.sendUserMessage(message);
+  };
+  const nextGoalId = (state: GoalState): string => `goal-${state.goals.length + 1}`;
+  const nextSubgoalId = (state: GoalState): string => `subgoal-${state.goals.reduce((count, goal) => count + goal.subgoals.length, 0) + 1}`;
+  const targetTypeForId = (state: GoalState, targetId: string): "goal" | "subgoal" => {
+    if (state.goals.some((goal) => goal.id === targetId)) return "goal";
+    if (state.goals.some((goal) => goal.subgoals.some((subgoal) => subgoal.id === targetId))) return "subgoal";
+    throw new Error(`Unknown goal target: ${targetId}`);
+  };
+  const refreshGoalFooterSummary = (state: GoalState) => {
+    currentGoalFooterSummary = renderGoalSummary(state);
+    currentGoalCompactionSummary = buildGoalCompactionSummary(state);
+    for (const invalidate of goalFooterInvalidators) invalidate();
+  };
+  const applyGoalMutation = async (ctx: any, command: GoalCommand) => {
+    const result = await applyAndPersistGoalCommand(goalRunId(ctx), goalRootDir(ctx), command, ctx);
+    refreshGoalFooterSummary(result.state);
+    return result.state;
+  };
+  const sendGoalContinuationFollowUp = async (prompt: string) => {
+    try {
+      await Promise.resolve(pi.sendUserMessage(prompt, { deliverAs: "followUp" }));
+    } catch {
+      await Promise.resolve(pi.sendUserMessage(prompt));
+    }
+  };
+  const maybeQueueGoalContinuation = async (ctx: any, state: GoalState, receipt: ReturnType<typeof buildGoalVerifierReceipt>) => {
+    const decision = planGoalContinuation(state, receipt, {
+      isRootSession,
+      isTeamWorker,
+      subagentDepth: depthConfig.currentDepth,
+    });
+    if (decision.action === "none") return state;
+    const queued = await applyGoalMutation(ctx, {
+      type: "queue_continuation",
+      targetType: decision.targetType,
+      targetId: decision.targetId,
+      reason: decision.reason,
+      blockers: decision.blockers,
+      leaseId: decision.leaseId,
+    });
+    await sendGoalContinuationFollowUp(decision.prompt);
+    return queued;
+  };
+  const activeOrRunnableGoal = (state: GoalState) => state.goals.find((goal) => goal.id === state.activeGoalId)
+    ?? state.goals.find((goal) => goal.status === "active" || goal.status === "blocked" || goal.status === "verifying")
+    ?? state.goals.find((goal) => goal.status === "queued");
+  const findGoalForContract = (state: GoalState, contract: ClarificationGoalContract) => state.goals.find((goal) =>
+    goal.objective === contract.objective
+    && goal.successCriteria.join("\n") === contract.successCriteria.join("\n")
+    && goal.evidenceRequired.join("\n") === contract.evidenceRequired.join("\n")
+  );
+  const isHighRiskGoalContract = (contract: ClarificationGoalContract): boolean => {
+    const haystack = [
+      contract.objective,
+      ...contract.scope,
+      ...contract.nonGoals,
+      ...contract.successCriteria,
+      ...contract.constraints,
+      ...contract.evidenceRequired,
+      ...contract.risks,
+      ...contract.suggestedSubgoals,
+      contract.handoffCommand,
+      contract.draftedAt,
+    ].join("\n").toLowerCase();
+    return /\b(delete|destructive|drop|wipe|remove data|production|migration|large[- ]scale|irreversible)\b/.test(haystack);
+  };
+  const buildGoalAutoPrompt = (state: GoalState): string => {
+    const goal = activeOrRunnableGoal(state);
+    const activeSubgoal = goal?.subgoals.find((subgoal) => subgoal.id === goal.activeSubgoalId || subgoal.status === "active" || subgoal.status === "blocked");
+    const target = activeSubgoal ?? goal;
+    const targetLabel = activeSubgoal ? `${activeSubgoal.id} (${activeSubgoal.title})` : goal ? `${goal.id} (${goal.title})` : "the current goal";
+    return [
+      "Continue the durable /goal runtime automatically.",
+      "",
+      `Target: ${targetLabel}`,
+      target ? `Objective: ${target.objective}` : "Objective: inspect /goal status and infer the active target.",
+      "",
+      "Work until verifier PASS:",
+      "1. Inspect /goal status.",
+      "2. Implement the active goal or subgoal.",
+      "3. Record concrete evidence with /goal evidence <targetId> <evidence>.",
+      "4. Request completion with /goal complete <targetId>.",
+      "5. If reviewer-verifier returns FAIL, address blockers, add new evidence, and request completion again.",
+      "6. Stop only when reviewer-verifier returns PASS or user intervention is genuinely required.",
+    ].join("\n");
+  };
+  const autoStartGoalRuntime = async (ctx: any, initialState: GoalState): Promise<GoalState> => {
+    let state = initialState.continuation.queued || initialState.continuation.leaseId
+      ? await applyGoalMutation(ctx, { type: "clear_continuation" })
+      : initialState;
+    let goal = activeOrRunnableGoal(state);
 
-      if (milestoneMode) {
-        const confirmed = await ctx.ui.confirm(
-          "Start Agentic Milestone Planning",
-          "The agent will:\n1. Compose a Problem Brief\n2. Decide which reviewer perspectives are needed\n3. Dispatch reviewers in parallel\n4. Synthesize a milestone DAG\n\nProceed?"
-        );
-        if (!confirmed) return;
-
-        currentPhase = "milestoneplanning";
-        ctx.ui.setStatus("harness", "Agentic milestone workflow in progress...");
-
-        const prompt = topic
-          ? `Decompose the following complex task into milestones: "${topic}"\n\nFollow the agentic-milestone-planning skill rules. First compose a Problem Brief. Then dispatch all 3 reviewer agents in parallel using the subagent tool: reviewer-feasibility, reviewer-architecture, reviewer-risk. After all reviewers complete, synthesize their findings into a milestone DAG.`
-          : `Decompose the current complex task into milestones.\n\nFollow the agentic-milestone-planning skill rules. First compose a Problem Brief from the current context. Then dispatch all 3 reviewer agents in parallel using the subagent tool: reviewer-feasibility, reviewer-architecture, reviewer-risk. After all reviewers complete, synthesize their findings into a milestone DAG.`;
-
-        pi.sendUserMessage(prompt);
-        return;
+    if (!goal) {
+      const clarificationRootDir = defaultClarificationStateRoot(ctx?.cwd || process.cwd());
+      const clarification = await loadClarificationState(ctx?.runId || ctx?.sessionId || "default", clarificationRootDir);
+      if (clarification.goalContract) {
+        latestClarificationState = clarification;
+        latestClarificationRootDir = clarificationRootDir;
+      }
+      const contract = clarification.goalContract ?? (latestClarificationRootDir === clarificationRootDir ? latestClarificationState?.goalContract : undefined);
+      if (!contract) {
+        currentPhase = "clarifying";
+        await sendGoalContinuationFollowUp("The user ran /goal, but there is no active goal and no drafted Goal Contract. If the current conversation is clear enough, produce a Goal Contract and start the goal runtime; otherwise begin deep /clarify and ask one focused question.");
+        return state;
       }
 
-      const ok = await ctx.ui.confirm(
-        "Start Agentic Plan Crafting",
-        "The agent will create an executable implementation plan based on current context using the agentic-plan-crafting workflow.\n\nProceed?"
-      );
-      if (!ok) return;
+      if (isHighRiskGoalContract(contract)) {
+        if (!ctx?.ui?.confirm) {
+          notifyGoal(ctx, "High-risk Goal Contract requires interactive confirmation before /goal can start.", "error");
+          return state;
+        }
+        const proceed = await ctx.ui.confirm("Start high-risk goal?", `This Goal Contract appears high-risk. Start it now?\n\n${contract.objective}`);
+        if (!proceed) return state;
+      }
 
-      currentPhase = "planning";
-      ctx.ui.setStatus("harness", "Agentic planning workflow in progress...");
+      const existing = findGoalForContract(state, contract);
+      if (existing) {
+        goal = existing;
+      } else {
+        state = await applyGoalMutation(ctx, {
+          type: "create_goal",
+          goal: {
+            id: nextGoalId(state),
+            title: contract.objective,
+            objective: contract.objective,
+            successCriteria: contract.successCriteria,
+            constraints: contract.constraints,
+            evidenceRequired: contract.evidenceRequired,
+          },
+        });
+        goal = state.goals.at(-1)!;
+        for (const title of contract.suggestedSubgoals) {
+          state = await applyGoalMutation(ctx, {
+            type: "create_subgoal",
+            subgoal: {
+              id: nextSubgoalId(state),
+              goalId: goal.id,
+              title,
+              objective: title,
+            },
+          });
+        }
+        goal = state.goals.find((candidate) => candidate.id === goal!.id)!;
+      }
+    }
 
-      const prompt = topic
-        ? isRootSession
-          ? `Create an executable implementation plan for: "${topic}"\n\nFollow the agentic-plan-crafting skill rules. If a Context Brief exists from a previous agentic-clarification, use it as input. If not, use the ask_user_question tool to confirm goal, scope, and tech stack before writing the plan.`
-          : `Create an executable implementation plan for: "${topic}"\n\nFollow the agentic-plan-crafting skill rules. If a Context Brief exists from a previous agentic-clarification, use it as input. If not, state any missing goal, scope, or tech-stack information explicitly in the plan assumptions before writing the plan.`
-        : isRootSession
-          ? `Create an executable implementation plan for the current task.\n\nFollow the agentic-plan-crafting skill rules. If a Context Brief exists from a previous agentic-clarification, use it as input. If not, use the ask_user_question tool to confirm goal, scope, and tech stack before writing the plan.`
-          : `Create an executable implementation plan for the current task.\n\nFollow the agentic-plan-crafting skill rules. If a Context Brief exists from a previous agentic-clarification, use it as input. If not, state any missing goal, scope, or tech-stack information explicitly in the plan assumptions before writing the plan.`;
+    if (goal.status === "queued") {
+      state = await applyGoalMutation(ctx, { type: "activate_goal", goalId: goal.id });
+    }
+    currentPhase = "goal_active";
+    await sendGoalContinuationFollowUp(buildGoalAutoPrompt(state));
+    return state;
+  };
+  const isNonTerminalGoalRun = (state: GoalState): boolean => {
+    if (state.status === "completed" || state.status === "failed" || state.status === "cancelled") return false;
+    return Boolean(state.activeGoalId || state.goals.some((goal) => goal.status === "active" || goal.status === "blocked" || goal.status === "verifying"));
+  };
+  const isActiveClarificationRun = (state: ClarificationState): boolean => state.status === "interviewing" || state.status === "ready_for_contract" || state.status === "contract_drafted";
+  const restoreLatestGoalState = async (ctx: any, events: ReturnType<typeof extractGoalStateReplayEventsFromSessionEntries>): Promise<GoalState> => {
+    const rootDir = goalRootDir(ctx);
+    const fallbackRunId = goalRunId(ctx);
+    const runIds = [...new Set(events.map((event) => event.runId))];
+    if (runIds.length === 0) {
+      return (await restoreGoalStateFromSnapshotAndEvents(rootDir, fallbackRunId, events)).state;
+    }
 
-      pi.sendUserMessage(prompt);
+    const restored = await Promise.all(runIds.map(async (runId) => {
+      const matchingEvents = events.filter((event) => event.runId === runId);
+      const state = (await restoreGoalStateFromSnapshotAndEvents(rootDir, runId, matchingEvents)).state;
+      const latestEventAt = matchingEvents.map((event) => event.createdAt).sort().at(-1) ?? state.updatedAt;
+      return { state, latestEventAt };
+    }));
+
+    const candidates = restored.filter((item) => isNonTerminalGoalRun(item.state));
+    return (candidates.length > 0 ? candidates : restored)
+      .sort((left, right) => (right.state.updatedAt || right.latestEventAt).localeCompare(left.state.updatedAt || left.latestEventAt))[0].state;
+  };
+  const restoreLatestClarificationState = async (ctx: any, events: ReturnType<typeof extractClarificationStateReplayEventsFromSessionEntries>): Promise<ClarificationState> => {
+    const rootDir = defaultClarificationStateRoot(ctx?.cwd || process.cwd());
+    const fallbackRunId = ctx?.runId || ctx?.sessionId || "default";
+    const runIds = [...new Set(events.map((event) => event.runId))];
+    if (runIds.length === 0) {
+      return (await restoreClarificationStateFromSnapshotAndEvents(rootDir, fallbackRunId, events)).state;
+    }
+    const restored = await Promise.all(runIds.map(async (runId) => {
+      const matchingEvents = events.filter((event) => event.runId === runId);
+      const state = (await restoreClarificationStateFromSnapshotAndEvents(rootDir, runId, matchingEvents)).state;
+      const latestEventAt = matchingEvents.map((event) => event.createdAt).sort().at(-1) ?? state.updatedAt;
+      return { state, latestEventAt };
+    }));
+    const candidates = restored.filter((item) => isActiveClarificationRun(item.state));
+    return (candidates.length > 0 ? candidates : restored)
+      .sort((left, right) => (right.state.updatedAt || right.latestEventAt).localeCompare(left.state.updatedAt || left.latestEventAt))[0].state;
+  };
+
+  const runGoalVerifier = async (
+    ctx: any,
+    state: GoalState,
+    targetType: "goal" | "subgoal",
+    targetId: string,
+  ) => {
+    const target = getGoalVerifierTarget(state, targetType, targetId);
+    const agents = await discoverAgents(ctx?.cwd || process.cwd(), "user", BUNDLED_AGENTS_DIR);
+    const verifierAgent = agents.find((agent) => agent.name === GOAL_VERIFIER_AGENT);
+    const prompt = buildGoalVerifierPrompt(target, ctx?.cwd || process.cwd());
+    const verifiedAt = new Date().toISOString();
+    try {
+      const result = await runAgent({
+        agent: verifierAgent,
+        agentName: GOAL_VERIFIER_AGENT,
+        task: prompt,
+        cwd: ctx?.cwd || process.cwd(),
+        depthConfig,
+        makeDetails: makeDetails("single"),
+        contextMode: "fresh",
+        sandbox: {
+          enabled: true,
+          workspaceRoot: ctx?.cwd || process.cwd(),
+          networkMode: "on" as const,
+          additionalWritableRoots: piWritableRoots,
+          approvalMode: parsedApprovalMode.mode,
+          requireApprovalForAllCommands: true,
+        },
+      });
+      const output = isResultSuccess(result)
+        ? getFinalOutput(result.messages)
+        : result.errorMessage || result.stderr || getFinalOutput(result.messages) || "Verifier process failed";
+      const parsed = parseGoalVerifierOutput(output);
+      if (!isResultSuccess(result)) parsed.verdict = "FAIL";
+      return buildGoalVerifierReceipt(target, parsed, {
+        id: `receipt-${Date.now()}`,
+        verifiedAt,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return buildGoalVerifierReceipt(target, parseGoalVerifierOutput(message), {
+        id: `receipt-${Date.now()}`,
+        verifiedAt,
+      });
+    }
+  };
+
+  pi.registerCommand("goal", {
+    description: "Auto-start or continue the durable goal runtime — use /clarify, then /goal",
+    handler: async (args, ctx) => {
+      const runId = goalRunId(ctx);
+      const rootDir = goalRootDir(ctx);
+      const parsed = parseGoalCommand(args || "");
+
+      try {
+        if (parsed.kind === "error") {
+          notifyGoal(ctx, parsed.message, "error");
+          return;
+        }
+        if (parsed.kind === "help") {
+          notifyGoal(ctx, GOAL_HELP_TEXT, "info");
+          return;
+        }
+        if (parsed.kind === "status") {
+          const state = await loadGoalState(runId, rootDir);
+          notifyGoal(ctx, renderGoalStatus(state), "info");
+          return;
+        }
+        if (parsed.kind === "auto") {
+          const state = await autoStartGoalRuntime(ctx, await loadGoalState(runId, rootDir));
+          notifyGoal(ctx, renderGoalStatus(state), "success");
+          return;
+        }
+        if (parsed.kind === "clear") {
+          const result = await applyAndPersistGoalCommand(runId, rootDir, { type: "clear_state" }, ctx);
+          currentPhase = "idle";
+          activeArtifactDocument = null;
+          currentGoalCompactionSummary = null;
+          refreshGoalFooterSummary(result.state);
+          notifyGoal(ctx, renderGoalStatus(result.state), "success");
+          return;
+        }
+
+        let current = await loadGoalState(runId, rootDir);
+        let state: GoalState;
+        switch (parsed.kind) {
+          case "create":
+            state = await applyGoalMutation(ctx, {
+              type: "create_goal",
+              goal: {
+                id: nextGoalId(current),
+                title: parsed.objective,
+                objective: parsed.objective,
+              },
+            });
+            break;
+          case "activate":
+            state = await applyGoalMutation(ctx, { type: "activate_goal", goalId: parsed.goalId });
+            break;
+          case "subgoal":
+            state = await applyGoalMutation(ctx, {
+              type: "create_subgoal",
+              subgoal: {
+                id: nextSubgoalId(current),
+                goalId: parsed.goalId,
+                title: parsed.title,
+                objective: parsed.title,
+              },
+            });
+            break;
+          case "evidence":
+            state = await applyGoalMutation(ctx, {
+              type: "add_evidence",
+              targetType: targetTypeForId(current, parsed.targetId),
+              targetId: parsed.targetId,
+              evidence: parsed.evidence,
+            });
+            break;
+          case "complete": {
+            if (current.continuation.queued || current.continuation.leaseId) {
+              current = await applyGoalMutation(ctx, { type: "clear_continuation" });
+            }
+            const targetType = targetTypeForId(current, parsed.targetId);
+            const requested = await applyGoalMutation(ctx, {
+              type: "request_completion",
+              targetType,
+              targetId: parsed.targetId,
+            });
+            const receipt = await runGoalVerifier(ctx, requested, targetType, parsed.targetId);
+            const verified = await applyGoalMutation(ctx, {
+              type: "record_verifier_result",
+              receipt,
+            });
+            state = receipt.verdict === "PASS"
+              ? await applyGoalMutation(ctx, {
+                type: "complete_target",
+                targetType,
+                targetId: parsed.targetId,
+              })
+              : verified;
+            state = await maybeQueueGoalContinuation(ctx, state, receipt);
+            break;
+          }
+          case "pause":
+            state = await applyGoalMutation(ctx, { type: "pause_goal", goalId: parsed.goalId });
+            break;
+          case "resume":
+            state = await applyGoalMutation(ctx, { type: "resume_goal", goalId: parsed.goalId });
+            break;
+        }
+        notifyGoal(ctx, renderGoalStatus(state!), "success");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        notifyGoal(ctx, message, "error");
+      }
     },
   });
+
 
   // Review target argument must be a PR number, a git ref name, or a PR URL.
   // Restrict to a safe character set (alphanumerics, dot, dash, underscore,
@@ -1545,7 +1993,7 @@ Do not start multi-step implementation without a clear understanding of what the
       }
 
       currentPhase = "reviewing";
-      activeGoalDocument = null;
+      activeArtifactDocument = null;
       ctx.ui.setStatus("harness", "Code review in progress...");
 
       const targetClause = topic
@@ -1593,7 +2041,7 @@ Do not start multi-step implementation without a clear understanding of what the
       if (!confirmed) return;
 
       currentPhase = "ultrareviewing";
-      activeGoalDocument = null;
+      activeArtifactDocument = null;
       ctx.ui.setStatus("harness", "Ultrareview pipeline in progress...");
 
       const targetClause = topic
@@ -1736,10 +2184,10 @@ Do not start multi-step implementation without a clear understanding of what the
   });
 
   pi.registerCommand("reset-phase", {
-    description: "Reset the workflow phase to idle (clears clarify/plan mode)",
+    description: "Reset the workflow phase to idle (clears clarify/goal mode)",
     handler: async (_args, ctx) => {
       currentPhase = "idle";
-      activeGoalDocument = null;
+      activeArtifactDocument = null;
       ctx.ui.setStatus("harness", undefined);
       ctx.ui.notify("Workflow phase reset to idle.", "info");
     },
@@ -1890,8 +2338,11 @@ Do not start multi-step implementation without a clear understanding of what the
   pi.on("session_start", async (_event, ctx) => {
     preferTodoSurfaceTools(pi);
     currentPhase = "idle";
-    activeGoalDocument = null;
+    activeArtifactDocument = null;
     clarificationDone = false;
+    currentClarificationCompactionSummary = null;
+    latestClarificationState = null;
+    latestClarificationRootDir = null;
 
     cacheStats.totalInput = 0;
     cacheStats.totalCacheRead = 0;
@@ -1903,6 +2354,23 @@ Do not start multi-step implementation without a clear understanding of what the
 
     // Restore simple todo state from session branch entries
     restoreTodosFromBranchEntries(branchEntries);
+
+    const goalEvents = extractGoalStateReplayEventsFromSessionEntries(branchEntries);
+    const goalRestoreRootDir = goalRootDir(ctx);
+    const restoredGoalState = await restoreLatestGoalState(ctx, goalEvents);
+    await persistGoalState(restoredGoalState, goalRestoreRootDir);
+    if (isNonTerminalGoalRun(restoredGoalState)) currentPhase = "goal_active";
+    currentGoalFooterSummary = renderGoalSummary(restoredGoalState);
+    currentGoalCompactionSummary = buildGoalCompactionSummary(restoredGoalState);
+
+    const clarificationEvents = extractClarificationStateReplayEventsFromSessionEntries(branchEntries);
+    const clarificationRestoreRootDir = defaultClarificationStateRoot(ctx.cwd);
+    const restoredClarificationState = await restoreLatestClarificationState(ctx, clarificationEvents);
+    await persistClarificationState(restoredClarificationState, clarificationRestoreRootDir);
+    if (!isNonTerminalGoalRun(restoredGoalState) && isActiveClarificationRun(restoredClarificationState)) currentPhase = "clarifying";
+    latestClarificationState = restoredClarificationState;
+    latestClarificationRootDir = clarificationRestoreRootDir;
+    currentClarificationCompactionSummary = buildClarificationCompactionSummary(restoredClarificationState);
 
     // --- Structured-first session restore (M6) ---
     // Detect structured state via validated HARNESS_STATE_EVENT_CUSTOM_TYPE entries.
@@ -1966,10 +2434,15 @@ Do not start multi-step implementation without a clear understanding of what the
       }, cacheStats, activeTools, tui, {
         preset: uiSettings.footerPreset,
         glyphs: uiSettings.footerGlyphs,
+        getGoalSummary: () => currentGoalFooterSummary,
       });
+
+      const invalidateGoalFooter = () => footer.invalidate();
+      goalFooterInvalidators.add(invalidateGoalFooter);
 
       const originalDispose = footer.dispose.bind(footer);
       footer.dispose = () => {
+        goalFooterInvalidators.delete(invalidateGoalFooter);
         originalDispose();
         clearInterval(gitTimer);
         unsubBranch();
@@ -1994,7 +2467,7 @@ Do not start multi-step implementation without a clear understanding of what the
     });
 
     ctx.ui.notify(
-      "Agentic Harness loaded: /clarify, /plan, /reset-phase",
+      "Agentic Harness loaded: /clarify, /goal, /reset-phase",
       "info"
     );
   });

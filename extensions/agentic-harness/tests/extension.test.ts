@@ -1,4 +1,7 @@
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { beforeEach, afterAll, describe, it, expect, vi } from "vitest";
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
@@ -33,6 +36,19 @@ vi.mock("../ui-settings.js", () => ({
 import extension from "../index.js";
 import { resolveAgenticUiSettings } from "../ui-settings.js";
 
+const tempDirs: string[] = [];
+
+async function tempDir(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "agentic-extension-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+const removedPlanRoute = ["/", "pl", "an"].join("");
+const removedMilestonePhase = ["milestone", "planning"].join("");
+const removedPlanCraftingSkill = ["agentic", "pl", "an", "crafting"].join("-");
+const removedRunPlanTerm = ["run", "pl", "an"].join("-");
+
 const originalSubagentEnv = {
   PI_SUBAGENT_DEPTH: process.env.PI_SUBAGENT_DEPTH,
   PI_SUBAGENT_MAX_DEPTH: process.env.PI_SUBAGENT_MAX_DEPTH,
@@ -53,7 +69,8 @@ beforeEach(() => {
   process.env.PI_ENABLE_TEAM_MODE = "1";
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   for (const [key, value] of Object.entries(originalSubagentEnv)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -254,14 +271,26 @@ describe("Extension Registration", () => {
 
     const removedMilestoneCommand = ["ultra", "plan"].join("");
     expect(commands.has("clarify")).toBe(true);
-    expect(commands.has("plan")).toBe(true);
+    expect(commands.has("goal")).toBe(true);
+    expect(commands.has("plan")).toBe(false);
     expect(commands.has(removedMilestoneCommand)).toBe(false);
+    expect(commands.has("review")).toBe(true);
+    expect(commands.has("ultrareview")).toBe(true);
     expect(commands.has("ask")).toBe(true);
+    expect(commands.has("team")).toBe(true);
     expect(commands.has("reset-phase")).toBe(true);
     expect(commands.has("welcome")).toBe(true);
     expect(commands.has("stash-save")).toBe(true);
     expect(commands.has("stash-clear")).toBe(true);
     expect(commands.has("stash-restore")).toBe(true);
+  });
+
+  it("should expose the final goal command surface", () => {
+    const { mockPi, commands } = createMockPi();
+    extension(mockPi);
+
+    expect(commands.has("goal")).toBe(true);
+    expect(commands.has("plan")).toBe(false);
   });
 
   it("should NOT register ask command in subagent context", () => {
@@ -274,7 +303,8 @@ describe("Extension Registration", () => {
       const removedMilestoneCommand = ["ultra", "plan"].join("");
       expect(commands.has("ask")).toBe(false);
       expect(commands.has("clarify")).toBe(true);
-      expect(commands.has("plan")).toBe(true);
+      expect(commands.has("goal")).toBe(true);
+      expect(commands.has("plan")).toBe(false);
       expect(commands.has(removedMilestoneCommand)).toBe(false);
     } finally {
       if (prevDepth === undefined) delete process.env.PI_SUBAGENT_DEPTH;
@@ -613,20 +643,27 @@ describe("before_agent_start Event", () => {
     expect(result?.systemPrompt).toContain("## Available Subagents");
   });
 
+  it("should not include legacy planning workflow guidance in the root system prompt", async () => {
+    const { mockPi, events } = createMockPi();
+    extension(mockPi);
+
+    const handlers = events.get("before_agent_start")!;
+    const result = await handlers[0](
+      { type: "before_agent_start", prompt: "test", systemPrompt: "base" },
+      { cwd: "." } as any
+    );
+
+    expect(result?.systemPrompt).not.toContain(removedMilestonePhase);
+    expect(result?.systemPrompt).not.toContain(removedPlanCraftingSkill);
+    expect(result?.systemPrompt).not.toContain(removedRunPlanTerm);
+  });
+
   it("should avoid ask_user_question guidance in subagent planning context", async () => {
     const prevDepth = process.env.PI_SUBAGENT_DEPTH;
     process.env.PI_SUBAGENT_DEPTH = "1";
     try {
       const { mockPi, events, commands } = createMockPi();
       extension(mockPi);
-
-      const plan = commands.get("plan");
-      await plan.handler("", {
-        ui: {
-          confirm: vi.fn().mockResolvedValue(true),
-          setStatus: vi.fn(),
-        },
-      } as any);
 
       const handlers = events.get("before_agent_start")!;
       const result = await handlers[0](
@@ -674,8 +711,8 @@ describe("before_agent_start Event", () => {
       const { mockPi, events, commands } = createMockPi();
       extension(mockPi);
 
-      // Root would normally set phase via /plan; inside a subagent the /plan command is not registered,
-      // but we simulate the scenario where a subagent process inherits a phase from a (now-removed) global store.
+      // Root workflow state is not registered inside a subagent,
+      // but we simulate the scenario where a subagent process inherits a phase from a removed global store.
       // Because phase state is now in-memory-only and subagents start idle, this test also verifies the default
       // behaviour: idle subagents never get phase guidance text.
       const handlers = events.get("before_agent_start")!;
@@ -699,12 +736,11 @@ describe("before_agent_start Event", () => {
     const { mockPi, events, commands } = createMockPi();
     extension(mockPi);
 
-    // Put the root session in milestone planning phase via /plan --milestones.
-    const plan = commands.get("plan");
-    await plan.handler("--milestones test topic", {
+    const review = commands.get("review");
+    await review.handler("123", {
       ui: {
-        confirm: vi.fn().mockResolvedValue(true),
         setStatus: vi.fn(),
+        notify: vi.fn(),
       },
     } as any);
 
@@ -712,10 +748,10 @@ describe("before_agent_start Event", () => {
 
     // Case A: a normal user turn — phase guidance is injected as before.
     const normal = await handlers[0](
-      { type: "before_agent_start", prompt: "keep working on the milestones", systemPrompt: "base" },
+      { type: "before_agent_start", prompt: "keep working on the review", systemPrompt: "base" },
       { cwd: "." } as any
     );
-    expect(normal?.systemPrompt).toContain("Active Workflow: Milestone Planning");
+    expect(normal?.systemPrompt).toContain("Active Workflow: Code Review");
 
     // Case B: the user invokes a skill via the claude-code-style <command-name> tag.
     // Phase guidance must NOT be injected for this turn.
@@ -728,16 +764,16 @@ describe("before_agent_start Event", () => {
       { type: "before_agent_start", prompt: skillPrompt, systemPrompt: "base" },
       { cwd: "." } as any
     );
-    expect(skillTurn?.systemPrompt).not.toContain("Active Workflow: Milestone Planning");
+    expect(skillTurn?.systemPrompt).not.toContain("Active Workflow: Code Review");
 
     // Case C: a raw "[skill] foo" marker also suppresses guidance.
     const bracketTurn = await handlers[0](
       { type: "before_agent_start", prompt: "[skill] some-skill\n\nfix this", systemPrompt: "base" },
       { cwd: "." } as any
     );
-    expect(bracketTurn?.systemPrompt).not.toContain("Active Workflow: Milestone Planning");
+    expect(bracketTurn?.systemPrompt).not.toContain("Active Workflow: Code Review");
   });
-  it("should normalize legacy compacted milestone phase details", async () => {
+  it("should ignore legacy compacted milestone phase details", async () => {
     const { mockPi, events } = createMockPi();
     extension(mockPi);
 
@@ -753,7 +789,7 @@ describe("before_agent_start Event", () => {
         compactionEntry: {
           details: {
             phase: ["ultra", "planning"].join(""),
-            activeGoalDocument: "docs/engineering-discipline/plans/legacy.md",
+            activeGoalDocument: "docs/engineering-discipline/legacy-docs/legacy.md",
           },
         },
       } as any,
@@ -765,17 +801,24 @@ describe("before_agent_start Event", () => {
       { cwd: "." } as any
     );
 
-    expect(result?.systemPrompt).toContain("Active Workflow: Milestone Planning");
+    expect(result?.systemPrompt).not.toContain("Active Workflow: Milestone Planning");
+    expect(result?.systemPrompt).not.toContain(removedMilestonePhase);
+    expect(result?.systemPrompt).not.toContain(removedPlanCraftingSkill);
+    expect(result?.systemPrompt).not.toContain(removedRunPlanTerm);
   });
 });
 
 describe("/clarify Command", () => {
-  it("should delegate to agent via sendUserMessage", async () => {
-    const { mockPi, commands } = createMockPi();
+  it("should delegate to agent via sendUserMessage with runtime-enforced deep clarification", async () => {
+    const { mockPi, commands, tools } = createMockPi();
     extension(mockPi);
 
+    expect(tools.has("clarification_state")).toBe(true);
     const clarify = commands.get("clarify");
     const mockCtx: any = {
+      cwd: await tempDir(),
+      runId: "clarify-run",
+      sessionManager: { appendCustomEntry: vi.fn() },
       ui: {
         confirm: vi.fn().mockResolvedValue(true),
         setStatus: vi.fn(),
@@ -784,54 +827,28 @@ describe("/clarify Command", () => {
 
     await clarify.handler("login feature", mockCtx);
 
+    expect(mockCtx.sessionManager.appendCustomEntry).toHaveBeenCalledWith(
+      "clarification-state-event",
+      expect.objectContaining({ command: expect.objectContaining({ type: "start_interview", topic: "login feature" }) }),
+    );
     expect(mockPi.sendUserMessage).toHaveBeenCalledTimes(1);
     const prompt = mockPi.sendUserMessage.mock.calls[0][0];
     expect(prompt).toContain("login feature");
-    expect(prompt).toContain("agentic-clarification");
+    expect(prompt).toContain("runtime-enforced deep agentic-clarification");
     expect(prompt).toContain("ask_user_question");
     expect(prompt).toContain("subagent");
+    expect(prompt).toContain("clarification_state");
+    expect(prompt).toContain("Gate: PASS");
   });
 });
 
-describe("/plan Command", () => {
-  it("should delegate to agent via sendUserMessage", async () => {
+describe("/goal Command", () => {
+  it("should register goal and remove legacy command", () => {
     const { mockPi, commands } = createMockPi();
     extension(mockPi);
 
-    const plan = commands.get("plan");
-    const mockCtx: any = {
-      ui: {
-        confirm: vi.fn().mockResolvedValue(true),
-        setStatus: vi.fn(),
-      },
-    };
-
-    await plan.handler("", mockCtx);
-
-    expect(mockPi.sendUserMessage).toHaveBeenCalledTimes(1);
-    const prompt = mockPi.sendUserMessage.mock.calls[0][0];
-    expect(prompt).toContain("agentic-plan-crafting");
-  });
-  it("should route --milestones through milestone planning", async () => {
-    const { mockPi, commands } = createMockPi();
-    extension(mockPi);
-
-    const plan = commands.get("plan");
-    const mockCtx: any = {
-      ui: {
-        confirm: vi.fn().mockResolvedValue(true),
-        setStatus: vi.fn(),
-      },
-    };
-
-    await plan.handler("--milestones test topic", mockCtx);
-
-    expect(mockPi.sendUserMessage).toHaveBeenCalledTimes(1);
-    const prompt = mockPi.sendUserMessage.mock.calls[0][0];
-    expect(prompt).toContain("agentic-milestone-planning");
-    expect(prompt).toContain("reviewer-feasibility");
-    expect(prompt).toContain("reviewer-architecture");
-    expect(prompt).toContain("reviewer-risk");
+    expect(commands.get("goal")).toBeDefined();
+    expect(commands.get("plan")).toBeUndefined();
   });
 });
 
@@ -1034,60 +1051,56 @@ describe("tool_result Phase Auto-Reset", () => {
     const { mockPi, events, commands } = createMockPi();
     extension(mockPi);
 
-    // Put root session into 'planning' phase via /plan.
-    const plan = commands.get("plan");
-    await plan.handler("test feature", {
+    const review = commands.get("review");
+    await review.handler("123", {
       ui: {
-        confirm: vi.fn().mockResolvedValue(true),
         setStatus: vi.fn(),
+        notify: vi.fn(),
       },
     } as any);
 
     const beforeHandlers = events.get("before_agent_start")!;
     const before = await beforeHandlers[0](
-      { type: "before_agent_start", prompt: "continue planning", systemPrompt: "base" },
+      { type: "before_agent_start", prompt: "continue reviewing", systemPrompt: "base" },
       { cwd: "." } as any
     );
-    expect(before?.systemPrompt).toContain("Active Workflow: Plan Crafting");
+    expect(before?.systemPrompt).toContain("Active Workflow: Code Review");
 
-    // Simulate a write to the planning terminal directory.
     const toolHandlers = events.get("tool_result")!;
     await toolHandlers[0](
       {
         type: "tool_result",
         toolName: "write",
-        input: { path: "docs/engineering-discipline/plans/2026-04-19-foo.md" },
+        input: { path: "docs/engineering-discipline/reviews/2026-04-19-foo.md" },
       } as any,
       { cwd: "." } as any
     );
 
-    // Next turn must no longer see phase guidance, because phase was reset to idle.
     const after = await beforeHandlers[0](
       { type: "before_agent_start", prompt: "anything", systemPrompt: "base" },
       { cwd: "." } as any
     );
-    expect(after?.systemPrompt).not.toContain("Active Workflow: Plan Crafting");
+    expect(after?.systemPrompt).not.toContain("Active Workflow: Code Review");
   });
 
   it("should NOT reset phase when a write targets a different phase's directory", async () => {
     const { mockPi, events, commands } = createMockPi();
     extension(mockPi);
 
-    const plan = commands.get("plan");
-    await plan.handler("test feature", {
+    const review = commands.get("review");
+    await review.handler("123", {
       ui: {
-        confirm: vi.fn().mockResolvedValue(true),
         setStatus: vi.fn(),
+        notify: vi.fn(),
       },
     } as any);
 
     const toolHandlers = events.get("tool_result")!;
-    // Writing a review doc while in planning phase must NOT reset planning.
     await toolHandlers[0](
       {
         type: "tool_result",
         toolName: "write",
-        input: { path: "docs/engineering-discipline/reviews/2026-04-19-bar.md" },
+        input: { path: "docs/engineering-discipline/legacy-docs/2026-04-19-bar.md" },
       } as any,
       { cwd: "." } as any
     );
@@ -1097,18 +1110,18 @@ describe("tool_result Phase Auto-Reset", () => {
       { type: "before_agent_start", prompt: "anything", systemPrompt: "base" },
       { cwd: "." } as any
     );
-    expect(after?.systemPrompt).toContain("Active Workflow: Plan Crafting");
+    expect(after?.systemPrompt).toContain("Active Workflow: Code Review");
   });
 
   it("should NOT reset phase on edit — only on write (first creation)", async () => {
     const { mockPi, events, commands } = createMockPi();
     extension(mockPi);
 
-    const plan = commands.get("plan");
-    await plan.handler("test feature", {
+    const review = commands.get("review");
+    await review.handler("123", {
       ui: {
-        confirm: vi.fn().mockResolvedValue(true),
         setStatus: vi.fn(),
+        notify: vi.fn(),
       },
     } as any);
 
@@ -1117,7 +1130,7 @@ describe("tool_result Phase Auto-Reset", () => {
       {
         type: "tool_result",
         toolName: "edit",
-        input: { path: "docs/engineering-discipline/plans/2026-04-19-foo.md" },
+        input: { path: "docs/engineering-discipline/reviews/2026-04-19-foo.md" },
       } as any,
       { cwd: "." } as any
     );
@@ -1127,38 +1140,31 @@ describe("tool_result Phase Auto-Reset", () => {
       { type: "before_agent_start", prompt: "anything", systemPrompt: "base" },
       { cwd: "." } as any
     );
-    expect(after?.systemPrompt).toContain("Active Workflow: Plan Crafting");
+    expect(after?.systemPrompt).toContain("Active Workflow: Code Review");
   });
 
   it("should also clear activeGoalDocument on auto-reset (symmetric with /reset-phase)", async () => {
     const { mockPi, events, commands } = createMockPi();
     extension(mockPi);
 
-    const plan = commands.get("plan");
-    await plan.handler("test feature", {
+    const review = commands.get("review");
+    await review.handler("123", {
       ui: {
-        confirm: vi.fn().mockResolvedValue(true),
         setStatus: vi.fn(),
+        notify: vi.fn(),
       },
     } as any);
 
-    // Fire the terminal-artifact write. Auto-reset must clear BOTH currentPhase
-    // AND activeGoalDocument; otherwise session_before_compact's early-return
-    // gate (`phase === "idle" && !activeGoalDocument`) stays open because the
-    // stale goal-doc pointer lingers, and custom compaction runs unnecessarily.
     const toolHandlers = events.get("tool_result")!;
     await toolHandlers[0](
       {
         type: "tool_result",
         toolName: "write",
-        input: { path: "docs/engineering-discipline/plans/2026-04-19-foo.md" },
+        input: { path: "docs/engineering-discipline/reviews/2026-04-19-foo.md" },
       } as any,
       { cwd: "." } as any
     );
 
-    // Observable consequence: session_before_compact must short-circuit because
-    // both phase and goalDoc are cleared. If goalDoc lingered, the handler would
-    // fall through and call ctx.ui.notify with the "Custom compaction..." message.
     const notify = vi.fn();
     const compactBefore = events.get("session_before_compact")!;
     const result = await compactBefore[0](
@@ -1205,8 +1211,8 @@ describe("session_compact Subagent Guard", () => {
           fromExtension: true,
           compactionEntry: {
             details: {
-              phase: "milestoneplanning",
-              activeGoalDocument: "docs/engineering-discipline/plans/x.md",
+              phase: removedMilestonePhase,
+              activeGoalDocument: "docs/engineering-discipline/legacy-docs/x.md",
             },
           },
         } as any,

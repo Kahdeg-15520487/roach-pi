@@ -1,10 +1,13 @@
 import { PI_TOOL_NAME_SET } from "./pi-tools.js";
+import type { GoalItem, GoalState, GoalVerifierReceipt, SubgoalItem } from "./goal-state.js";
+import { getClarificationGateIssues, type ClarificationState } from "./clarification-state.js";
 
 export type CompactionPhase =
   | "idle"
   | "clarifying"
-  | "planning"
-  | "milestoneplanning"
+  | "goal_drafting"
+  | "goal_active"
+  | "goal_verifying"
   | "reviewing"
   | "ultrareviewing";
 
@@ -49,41 +52,55 @@ const NO_TOOLS_TRAILER =
 
 function getPhaseSection(
   phase: CompactionPhase,
-  goalDoc: string | null,
+  artifactDoc: string | null,
+  goalStateSummary: string | null = null,
+  clarificationStateSummary: string | null = null,
 ): string {
-  if (phase === "idle") return "";
+  if (phase === "idle" && !goalStateSummary && !clarificationStateSummary) return "";
 
-  const docRef = goalDoc
-    ? `\n\nACTIVE GOAL DOCUMENT: \`${goalDoc}\`\nThis document contains the authoritative goal for the current work. Reference it in your summary to anchor the user's intent.\n`
+  const docRef = artifactDoc
+    ? `\n\nACTIVE ARTIFACT DOCUMENT: \`${artifactDoc}\`\nThis document contains the authoritative artifact for the current work. Reference it in your summary to anchor the user's intent.\n`
+    : "";
+  const runtimeRef = goalStateSummary
+    ? `\n\nACTIVE GOAL RUNTIME STATE:\n${goalStateSummary}\n`
+    : "";
+  const clarificationRef = clarificationStateSummary
+    ? `\n\nACTIVE CLARIFICATION RUNTIME STATE:\n${clarificationStateSummary}\n`
     : "";
 
   switch (phase) {
     case "clarifying":
-      if (!goalDoc) return "";
-      return `${docRef}
+      return `${docRef}${clarificationRef}
 ## Active Workflow: Agentic Clarification
-The session is in agentic-clarification mode. Your summary MUST emphasize:
-- What scope has been established vs. what remains ambiguous
-- Key decisions made during Q&A
-- The state of the Context Brief (complete, in-progress, or not yet started)`;
+The session is in runtime-enforced deep clarification mode. Your summary MUST emphasize:
+- Required checklist items completed vs. still open
+- Blocking ambiguities that remain unresolved or accepted as risk
+- Key user answers and code exploration findings
+- Whether the Goal Contract gate has passed and the exact handoff state`;
 
-    case "planning":
-      if (!goalDoc) return "";
+    case "goal_drafting":
       return `${docRef}
-## Active Workflow: Agentic Plan Crafting
-The session is in agentic-plan-crafting mode. Your summary MUST emphasize:
-- Overall task progress — which plan tasks are done, in-progress, or blocked
-- Key implementation decisions and their rationale
-- Current task being worked on and its exact state`;
+## Active Workflow: Goal Drafting
+The session is drafting a durable Goal Contract. Your summary MUST emphasize:
+- The objective, success criteria, constraints, and evidence requirements established so far
+- Any open questions still blocking activation
+- The exact state of the Goal Contract handoff to /goal`;
 
-    case "milestoneplanning":
-      if (!goalDoc) return "";
-      return `${docRef}
-## Active Workflow: Agentic Milestone Planning
-The session is in agentic-milestone-planning mode. Your summary MUST emphasize:
-- Which reviewers have completed and their key findings
-- The state of the milestone DAG (complete, in-progress)
-- Trade-off decisions made with the user`;
+    case "goal_active":
+      return `${docRef}${runtimeRef}
+## Active Workflow: Goal Execution
+The session is executing a durable /goal runtime. Your summary MUST emphasize:
+- Active goal/subgoal objective and current blockers
+- Evidence gathered and todo progress
+- Whether completion has been requested and verifier status`;
+
+    case "goal_verifying":
+      return `${docRef}${runtimeRef}
+## Active Workflow: Goal Verification
+The session is verifying goal completion. Your summary MUST emphasize:
+- The target under verification
+- Verifier PASS/FAIL status and blockers
+- Required continuation work if verification failed`;
 
     case "reviewing":
       return `${docRef}
@@ -108,12 +125,74 @@ The session is in /ultrareview mode. Your summary MUST emphasize:
   }
 }
 
+function activeGoal(state: GoalState): GoalItem | undefined {
+  return state.goals.find((goal) => goal.id === state.activeGoalId)
+    ?? state.goals.find((goal) => goal.status === "active" || goal.status === "blocked" || goal.status === "verifying");
+}
+
+function latestReceipt(goal: GoalItem): GoalVerifierReceipt | undefined {
+  return [...goal.verifierReceipts, ...goal.subgoals.flatMap((subgoal) => subgoal.verifierReceipts)]
+    .sort((left, right) => left.verifiedAt.localeCompare(right.verifiedAt))
+    .at(-1);
+}
+
+function nextActions(goal: GoalItem, state: GoalState): string[] {
+  const actions: string[] = [];
+  const activeSubgoal = goal.subgoals.find((subgoal) => subgoal.id === goal.activeSubgoalId);
+  if (state.continuation.queued) {
+    actions.push(`continue ${state.continuation.targetType ?? "goal"} ${state.continuation.targetId ?? goal.id}: ${state.continuation.reason ?? "queued continuation"}`);
+  }
+  if (activeSubgoal) actions.push(nextSubgoalAction(activeSubgoal));
+  for (const subgoal of goal.subgoals.filter((item) => item.status === "queued")) {
+    actions.push(`queued subgoal ${subgoal.id}: ${subgoal.objective}`);
+  }
+  if (actions.length === 0) actions.push(`/goal evidence ${goal.id} <evidence> then /goal complete ${goal.id}`);
+  return actions;
+}
+
+function nextSubgoalAction(subgoal: SubgoalItem): string {
+  if (subgoal.blockers.length > 0) return `fix blockers for ${subgoal.id}: ${subgoal.blockers.join("; ")}`;
+  if (subgoal.evidence.length === 0) return `/goal evidence ${subgoal.id} <evidence>`;
+  return `/goal complete ${subgoal.id}`;
+}
+
+export function buildClarificationCompactionSummary(state: ClarificationState): string | null {
+  if (state.status === "idle" || state.status === "cancelled") return null;
+  const issues = getClarificationGateIssues(state);
+  const completed = state.checklist.filter((item) => item.status !== "open").length;
+  return [
+    `Run: ${state.runId} (${state.status})`,
+    `Topic: ${state.topic || "(none)"}`,
+    `Checklist: ${completed}/${state.checklist.length} complete`,
+    `Open gate issues: ${issues.length > 0 ? issues.join("; ") : "none"}`,
+    `Answers recorded: ${state.answers.length}`,
+    `Exploration findings: ${state.explorationFindings.length}`,
+    `Handoff: ${state.goalContract?.handoffCommand ?? "not drafted"}`,
+  ].join("\n");
+}
+
+export function buildGoalCompactionSummary(state: GoalState): string | null {
+  const goal = activeGoal(state);
+  if (!goal) return null;
+  const receipt = latestReceipt(goal);
+  const blockers = [...goal.blockers, ...goal.subgoals.flatMap((subgoal) => subgoal.blockers)];
+  return [
+    `Run: ${state.runId} (${state.status})`,
+    `Active goal: ${goal.id} — ${goal.objective}`,
+    `Blockers: ${blockers.length > 0 ? blockers.join("; ") : "none"}`,
+    `Latest verifier result: ${receipt ? `${receipt.verdict} — ${receipt.summary}` : "pending"}`,
+    `Queued next actions: ${nextActions(goal, state).join(" | ")}`,
+  ].join("\n");
+}
+
 export function getCompactionPrompt(
   phase: CompactionPhase,
-  goalDoc: string | null,
+  artifactDoc: string | null,
   customInstructions?: string,
+  goalStateSummary?: string | null,
+  clarificationStateSummary?: string | null,
 ): string {
-  const phaseSection = getPhaseSection(phase, goalDoc);
+  const phaseSection = getPhaseSection(phase, artifactDoc, goalStateSummary ?? null, clarificationStateSummary ?? null);
 
   let prompt = `${NO_TOOLS_PREAMBLE}Your task is to create a detailed summary of the conversation so far, paying close attention to the user's explicit requests and your previous actions.
 This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.

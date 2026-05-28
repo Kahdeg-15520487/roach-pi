@@ -222,14 +222,14 @@ CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
               <td><span data-lang="en">Yes (phase preserved)</span><span data-lang="ko">예 (단계 유지)</span></td>
             </tr>
             <tr>
-              <td><code>planning</code></td>
-              <td><span data-lang="en">During <code>/plan</code></span><span data-lang="ko"><code>/plan</code> 중</span></td>
-              <td><span data-lang="en">Yes (phase + goal preserved)</span><span data-lang="ko">예 (단계 + 목표 유지)</span></td>
+              <td><code>goal_drafting</code></td>
+              <td><span data-lang="en">During Goal Contract drafting</span><span data-lang="ko">Goal Contract 작성 중</span></td>
+              <td><span data-lang="en">Yes (phase + draft preserved)</span><span data-lang="ko">예 (단계 + 초안 유지)</span></td>
             </tr>
             <tr>
-              <td><code>milestoneplanning</code></td>
-              <td><span data-lang="en">During <code>/plan --milestones</code></span><span data-lang="ko"><code>/plan --milestones</code> 중</span></td>
-              <td><span data-lang="en">Yes (phase preserved)</span><span data-lang="ko">예 (단계 유지)</span></td>
+              <td><code>goal_active</code></td>
+              <td><span data-lang="en">During <code>/goal</code> execution</span><span data-lang="ko"><code>/goal</code> 실행 중</span></td>
+              <td><span data-lang="en">Yes (goal state preserved)</span><span data-lang="ko">예 (목표 상태 유지)</span></td>
             </tr>
             <tr>
               <td><code>reviewing</code></td>
@@ -335,10 +335,10 @@ CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
           </li>
         </ul>
         <p data-lang="en">
-          This means a long-running plan execution will not lose track of its goal or phase even if multiple compactions occur.
+          This means durable goal execution will not lose track of its active goal, blockers, verifier status, or phase even if multiple compactions occur.
         </p>
         <p data-lang="ko">
-          즉, 긴 계획 실행 중 여러 컴팩션이 발생해도 목표나 단계를 잃지 않습니다.
+          즉, durable goal 실행 중 여러 컴팩션이 발생해도 활성 목표, 차단 요소, 검증 상태, 단계를 잃지 않습니다.
         </p>
       </section>
 

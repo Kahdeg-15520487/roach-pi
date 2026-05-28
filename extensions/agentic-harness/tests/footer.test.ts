@@ -43,7 +43,8 @@ function createFooter(
   gitStats = { ahead: 0, behind: 0, dirty: 0, untracked: 0 },
   thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined = "high",
   modelInfo = { name: "test-model", isLatest: false },
-  glyphs?: FooterGlyphMode
+  glyphs?: FooterGlyphMode,
+  goalSummary?: string,
 ): RoachFooter {
   return new RoachFooter(
     stubTheme,
@@ -59,7 +60,7 @@ function createFooter(
     { totalInput: 100, totalCacheRead: 50 },
     { running: new Map([["tool-1", "read"]]) },
     null,
-    { preset, glyphs },
+    { preset, glyphs, getGoalSummary: () => goalSummary },
   );
 }
 
@@ -191,6 +192,68 @@ describe("RoachFooter status bridge", () => {
 
     // Clean up
     setCurrentTodos([]);
+  });
+
+  it("omits the goal segment when no active goal summary exists", () => {
+    const rendered = createFooter().render(150).join("\n");
+
+    expect(rendered).not.toContain("verify:");
+    expect(rendered).not.toContain("subgoals:");
+  });
+
+  it("renders active goal summary within the footer width", () => {
+    const footer = createFooter(
+      new Map(),
+      "default",
+      { ahead: 0, behind: 0, dirty: 0, untracked: 0 },
+      "high",
+      { name: "test-model", isLatest: false },
+      "plain",
+      "goal-1 | verify:pending | subgoals:1/3 | Ship an intentionally long active goal title",
+    );
+    const lines = footer.render(80);
+    const rendered = lines.join("\n");
+
+    expect(rendered).toContain("goal-1");
+    expect(rendered).toContain("verify:pending");
+    expectAllLinesFit(lines, 80);
+  });
+
+  it("renders verifier fail blocker indicator in the goal segment", () => {
+    const rendered = createFooter(
+      new Map(),
+      "default",
+      { ahead: 0, behind: 0, dirty: 0, untracked: 0 },
+      "high",
+      { name: "test-model", isLatest: false },
+      "plain",
+      "goal-1 | verify:fail | subgoals:0/2 | Fix blockers",
+    ).render(150).join("\n");
+
+    expect(rendered).toContain("verify:fail");
+  });
+
+  it("keeps todo panel rendering independently when goal summary is present", () => {
+    const todos: SimpleTodoItem[] = [
+      { content: "Keep todo visible", status: "in_progress", priority: "high" },
+      { content: "Keep pending visible", status: "pending", priority: "medium" },
+    ];
+    setCurrentTodos(todos);
+
+    const rendered = createFooter(
+      new Map(),
+      "default",
+      { ahead: 0, behind: 0, dirty: 0, untracked: 0 },
+      "high",
+      { name: "test-model", isLatest: false },
+      "plain",
+      "goal-1 | verify:pending | subgoals:1/2 | Active goal",
+    ).render(140).join("\n");
+
+    expect(rendered).toContain("Todo 0/2");
+    expect(rendered).toContain("Keep todo visible");
+    expect(rendered).toContain("goal-1");
+    expect(rendered).toContain("verify:pending");
   });
 
   it("renders multiple extension statuses in stable key order", () => {

@@ -1,78 +1,75 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 function readSkill(name: string): string {
   return readFileSync(new URL(`../skills/${name}/SKILL.md`, import.meta.url), "utf-8");
 }
 
-describe("skill docs reference structured harness tools", () => {
-  it("agentic-run-plan requires mandatory todowrite task status updates", () => {
-    const src = readSkill("agentic-run-plan");
-    expect(src).toContain("Task Status Update (MANDATORY)");
-    expect(src).toContain("todowrite");
-    expect(src).toContain("todoread");
-    expect(src).not.toContain("harness_plan set_task_status");
-    expect(src).toContain("After the validator passes");
-  });
+const legacySkillNames = [
+  ["agentic", "pl", "an", "crafting"].join("-"),
+  ["agentic", "run", "pl", "an"].join("-"),
+  ["agentic", "milestone", "planning"].join("-"),
+  ["agentic", "long", "run"].join("-"),
+  ["agentic", "review", "work"].join("-"),
+];
+const removedPlanRoute = ["/", "pl", "an"].join("");
+const removedRunPlanTerm = ["run", "pl", "an"].join("-");
+const removedLongRunTerm = ["long", "run"].join("-");
 
-  it("agentic-long-run references harness_milestone, todowrite, todoread, and canonical structured state", () => {
-    const src = readSkill("agentic-long-run");
-    expect(src).toContain("harness_milestone");
-    expect(src).toContain("todowrite");
-    expect(src).toContain("todoread");
-    expect(src).toContain("canonical structured state");
-  });
+function discoveredSkillNames(): string[] {
+  const skillsDir = new URL("../skills/", import.meta.url);
+  return readdirSync(skillsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(new URL(`${entry.name}/SKILL.md`, skillsDir)))
+    .map((entry) => entry.name)
+    .sort();
+}
 
-  it("agentic-long-run does not use markdown checkboxes or state.md as canonical recovery state", () => {
-    const src = readSkill("agentic-long-run");
-    expect(src).not.toContain("first unchecked task");
-    expect(src).not.toContain("checkboxes marked");
-    expect(src).not.toContain("Update state.md");
-    expect(src).not.toContain("Checkpoint files are the source of truth");
-    expect(src).toContain("Do not infer task status from markdown checkboxes");
-  });
+describe("goal skill docs", () => {
+  it("agentic-goal requires durable goal runtime, todos, evidence, and verifier PASS", () => {
+    const src = readSkill("agentic-goal");
 
-  it("agentic-long-run forbids main-agent direct task execution and requires structured task status", () => {
-    const src = readSkill("agentic-long-run");
-    expect(src).toContain("Do not execute plan tasks directly as the main agent");
-    expect(src).toContain("Initialize normal task progress from the approved plan via `todowrite`");
+    expect(src).toContain("/goal status");
     expect(src).toContain("todoread");
     expect(src).toContain("todowrite");
-    expect(src).not.toContain("harness_plan set_task_status");
-    expect(src).toContain("harness_milestone set_status");
-    expect(src).not.toContain("Update state.md: set milestone status");
-    expect(src).not.toContain("Set milestone status to `skipped` in state.md");
+    expect(src).toContain("/goal evidence");
+    expect(src).toContain("verifier subagent returns PASS");
+    expect(src).toContain("verifier returns FAIL");
+    for (const legacySkillName of legacySkillNames) {
+      expect(src).not.toContain(legacySkillName);
+    }
   });
+});
 
-  it("agentic-long-run records milestone plan files through harness_milestone", () => {
-    const src = readSkill("agentic-long-run");
-    expect(src).toContain("Use `harness_milestone` for milestone creation, dependency metadata, attempts, plan files");
-    expect(src).toContain("attach the plan file path to the milestone via `harness_milestone`");
-    expect(src).toContain('{ "runId": "<run-id>", "action": "update", "id": "M1", "planFile": "docs/.../plan.md" }');
-    expect(src).not.toContain("attach the plan to the milestone via `harness_plan`");
-    expect(src).not.toContain('{ "runId": "<run-id>", "action": "attach", "planId": "<plan-id>", "milestoneId": "M1", "title": "...", "goal": "...", "planFile": "docs/.../plan.md" }');
+describe("clarification skill goal handoff", () => {
+  it("requires Goal Contract output and excludes legacy routing strings", () => {
+    const src = readSkill("agentic-clarification");
+
+    expect(src).toContain("Goal Contract");
+    expect(src).toContain("/goal");
+    expect(src).toContain("clarification_state");
+    expect(src).toContain("Runtime Gate");
+    expect(src).toContain("Gate: PASS");
+    expect(src.toLowerCase()).toContain("non-goals");
+    expect(src).toContain("Edge cases");
+    expect(src).toContain("Technical context");
+    expect(src.toLowerCase()).toContain("success criteria");
+    expect(src.toLowerCase()).toContain("evidence required");
+    expect(src).not.toContain(legacySkillNames[0]);
+    expect(src).not.toContain(legacySkillNames[2]);
+    expect(src).not.toContain(removedPlanRoute);
+    expect(src).not.toContain("milestones");
+    expect(src).not.toContain(removedRunPlanTerm);
+    expect(src).not.toContain(removedLongRunTerm);
   });
+});
 
-  it("agentic-plan-crafting references harness_plan and define_tasks", () => {
-    const src = readSkill("agentic-plan-crafting");
-    expect(src).toContain("harness_plan");
-    expect(src).toContain("define_tasks");
-    expect(src).not.toContain("syntax for progress tracking");
-    expect(src).toContain("canonical progress is read with `todoread` and updated with `todowrite`");
-  });
+describe("goal runtime skill discovery surface", () => {
+  it("discovers agentic-goal and hides legacy public workflow skills", () => {
+    const skills = discoveredSkillNames();
 
-  it("agentic-review-work references harness_milestone", () => {
-    const src = readSkill("agentic-review-work");
-    expect(src).toContain("harness_milestone");
-    expect(src).toContain("todowrite");
-    expect(src).toContain("rather than `harness_plan`");
-  });
-
-  it("agentic-milestone-planning references harness_milestone", () => {
-    const src = readSkill("agentic-milestone-planning");
-    expect(src).toContain("harness_milestone");
-    expect(src).toContain("todoread");
-    expect(src).toContain("todowrite");
-    expect(src).not.toContain("harness_plan set_task_status");
+    expect(skills).toContain("agentic-goal");
+    for (const legacySkillName of legacySkillNames) {
+      expect(skills).not.toContain(legacySkillName);
+    }
   });
 });

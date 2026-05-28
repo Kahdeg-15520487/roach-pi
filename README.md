@@ -30,7 +30,7 @@
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Clarify and Plan](#clarify-and-plan)
+- [Clarify and Goal](#clarify-and-goal)
 - [Subagent Orchestration](#subagent-orchestration)
 - [Review Pipelines](#review-pipelines)
 - [FFF Search](#fff-search)
@@ -53,7 +53,7 @@
 ROACH PI is an extension suite for the pi coding agent. It turns a normal coding session into a disciplined engineering loop:
 
 <p align="center">
-  <img src="assets/workflow-preview.svg" alt="ROACH PI workflow: clarify → plan → worker → validator" width="88%">
+  <img src="assets/workflow-preview.svg" alt="ROACH PI workflow: clarify → goal → verifier-guarded continuation" width="88%">
 </p>
 
 It is intentionally inspectable: commands, tools, hooks, agents, and skills are plain TypeScript and Markdown in this repository.
@@ -97,17 +97,13 @@ Try the disciplined path on a real task — from fuzzy idea to verified implemen
 /clarify Add a feature that exports review results as Markdown
 ```
 
-After the context brief is clear:
+After the Goal Contract is clear, run durable execution:
 
 ```text
-/plan
+/goal
 ```
 
-Then ask the agent to run the plan through the execution loop:
-
-```text
-plan-compliance → plan-worker → plan-validator
-```
+The runtime creates/activates the goal, drives implementation, records evidence, requests verifier-guarded completion, and continues after verifier FAIL until PASS. Use `/goal status` only when you want to inspect state without starting work.
 
 Before merging non-trivial changes, run a review:
 
@@ -125,28 +121,23 @@ Quick system checks for visibility:
 
 ---
 
-## Clarify and Plan
+## Clarify and Goal
 
 Vague requests should not become vague code.
 
 **`/clarify`** forces ambiguity into the open before implementation starts. It asks one focused question, offers concrete choices when useful, and explores relevant files with an `explorer` subagent in parallel.
 
-The output is a **Context Brief** — a structured summary of the clarified scope, constraints, and affected files.
+The output is a **Goal Contract** — a structured summary of the objective, scope, constraints, success criteria, evidence required, risks, and suggested initial subgoals.
 
-**`/plan`** then converts that brief into a task-by-task implementation plan with:
-- explicit files to modify
-- step-by-step instructions
-- verification commands
-- success criteria
-
-Plan execution uses a **compliance → worker → validator** loop, so implementation and verification stay separated. Structured progress tracking records milestones, plan tasks, and todos as durable state — the footer reflects live `running` → `completed`/`failed` transitions and can restore progress from session replay.
+**`/goal`** owns durable execution. It tracks queued goals, active subgoals, evidence, blockers, verifier receipts, and automatic continuation. Completion is guarded by `reviewer-verifier`; a target cannot complete until the verifier returns PASS.
 
 | Command | Purpose |
 |---|---|
 | `/clarify [topic]` | Resolve ambiguity with dynamic questions and parallel exploration |
-| `/plan [topic]` | Create an executable implementation plan |
-| `/plan --milestones [topic]` | Break complex work into milestones using three planning reviewers |
-| `/reset-phase` | Clear active clarify/plan state |
+| `/goal` | Auto-start or continue the durable goal runtime until verifier PASS |
+| `/goal status` | Inspect active goal, subgoals, blockers, evidence, and next action |
+| `/goal complete <targetId>` | Advanced: request verifier-guarded completion manually |
+| `/reset-phase` | Clear active workflow phase |
 
 ---
 
@@ -320,9 +311,10 @@ pi --no-nested-agents    Disable at startup
 | Command | Description |
 |---|---|
 | `/clarify [topic]` | Resolve ambiguity with dynamic questions and parallel exploration |
-| `/plan [topic]` | Create an executable implementation plan |
-| `/plan --milestones [topic]` | Break complex work into milestones using three planning reviewers |
-| `/reset-phase` | Clear active clarify/plan state |
+| `/goal` | Auto-start or continue durable goal execution until verifier PASS |
+| `/goal status` | Inspect durable goal runtime status |
+| `/goal complete <targetId>` | Advanced: request verifier-guarded completion manually |
+| `/reset-phase` | Clear active clarify/goal state |
 
 ### Review
 

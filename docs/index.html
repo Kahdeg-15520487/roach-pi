@@ -161,10 +161,10 @@
       </h2>
 
       <p data-lang="en">
-        The extension provides a three-phase workflow: <strong>clarify → plan → execute</strong>. Each phase is driven by a slash command.
+        The extension provides a streamlined workflow: <strong>clarify → goal</strong>. <code>/goal</code> creates, activates, continues, and verifies automatically.
       </p>
       <p data-lang="ko">
-        익스텐션은 3단계 워크플로를 제공합니다: <strong>명확화 → 계획 → 실행</strong>. 각 단계는 슬래시 명령으로 구동됩니다.
+        익스텐션은 단순한 워크플로를 제공합니다: <strong>명확화 → goal</strong>. <code>/goal</code>이 자동으로 생성, 활성화, 이어가기, 검증을 진행합니다.
       </p>
 
       <ol class="step-list" style="margin-top: 1.5rem;">
@@ -190,38 +190,38 @@
             <span data-lang="ko"> — 모호성 해결</span>
           </h3>
           <p data-lang="en">
-            The agent asks dynamic, context-aware questions one at a time while exploring the codebase in parallel. Ends with a structured <strong>Context Brief</strong> that defines scope, constraints, and success criteria.
+            The agent asks dynamic, context-aware questions one at a time while exploring the codebase in parallel. Ends with a structured <strong>Goal Contract</strong> that defines scope, constraints, success criteria, and evidence requirements.
           </p>
           <p data-lang="ko">
-            에이전트가 코드베이스를 병렬로 탐색하면서 동적이고 문맥에 맞는 질문을 하나씩 묻습니다. 범위, 제약, 성공 기준을 정의하는 구조화된 <strong>컨텍스트 브리프</strong>로 끝납니다.
+            에이전트가 코드베이스를 병렬로 탐색하면서 동적이고 문맥에 맞는 질문을 하나씩 묻습니다. 범위, 제약, 성공 기준, 증거 요구사항을 정의하는 구조화된 <strong>Goal Contract</strong>로 끝납니다.
           </p>
         </li>
 
         <li>
           <h3>
-            <code>/plan</code>
-            <span data-lang="en"> — Create an Executable Plan</span>
-            <span data-lang="ko"> — 실행 가능한 계획 생성</span>
+            <code>/goal</code>
+            <span data-lang="en"> — Activate Durable Execution</span>
+            <span data-lang="ko"> — durable 실행 활성화</span>
           </h3>
           <p data-lang="en">
-            Transforms the Context Brief into an implementation plan with exact file paths, code blocks, commands, and expected outputs. No placeholders — every step is immediately executable by a worker agent.
+            Starts or continues a durable runtime that tracks goals, subgoals, todos, evidence, blockers, verifier receipts, and automatic continuation. Completion requires an independent verifier PASS.
           </p>
           <p data-lang="ko">
-            컨텍스트 브리프를 정확한 파일 경로, 코드 블록, 명령어, 예상 출력이 포함된 구현 계획으로 변환합니다. 플레이스홀더 없음 — 모든 단계가 워커 에이전트가 즉시 실행할 수 있습니다.
+            목표, 하위 목표, todo, 증거, 차단 요소, 검증 영수증, 자동 이어가기를 추적하는 durable runtime을 시작하거나 이어갑니다. 완료에는 독립 verifier PASS가 필요합니다.
           </p>
         </li>
 
         <li>
           <h3>
-            <code>/plan --milestones</code>
-            <span data-lang="en"> — Milestone Decomposition</span>
-            <span data-lang="ko"> — 마일스톤 분해</span>
+            <code>/goal subgoal</code>
+            <span data-lang="en"> — Subgoal Queueing</span>
+            <span data-lang="ko"> — 하위 목표 큐잉</span>
           </h3>
           <p data-lang="en">
-            For complex multi-day tasks. Dispatches 3 independent reviewer agents in parallel (Feasibility, Architecture, Risk), then synthesizes findings into an optimized milestone DAG.
+            For complex multi-step tasks. Queue subgoals with dependencies and required evidence, then let the goal runtime advance after verifier-guarded completion.
           </p>
           <p data-lang="ko">
-            복잡한 며칠짜리 작업을 위해. 3개의 독립적인 리뷰어 에이전트를 병렬로 디스패치(타당성, 아키텍처, 리스크)한 후, 최적화된 마일스톤 DAG로 종합합니다.
+            복잡한 다단계 작업을 위해. 의존성과 필요한 증거가 있는 하위 목표를 큐에 넣고, verifier-guarded 완료 후 goal runtime이 진행하게 합니다.
           </p>
         </li>
 
@@ -367,10 +367,10 @@
           </div>
           <div class="feature-desc">
             <p data-lang="en">
-              Bundled LLM skill rulesets: clarification, plan crafting, run plan, review work, simplify, systematic debugging, Karpathy discipline, Rob Pike optimization, long-run orchestration, milestone planning, and more.
+              Bundled LLM skill rulesets: clarification, durable goal execution, verifier-guarded review, simplify, systematic debugging, Karpathy discipline, Rob Pike optimization, and more.
             </p>
             <p data-lang="ko">
-              번들 LLM 스킬 룰셋: 명확화, 계획 작성, 계획 실행, 작업 리뷰, 단순화, 체계적 디버깅, Karpathy 디사이플린, Rob Pike 최적화, 롱런 오케스트레이션, 마일스톤 계획 등.
+              번들 LLM 스킬 룰셋: 명확화, durable goal 실행, verifier-guarded 리뷰, 단순화, 체계적 디버깅, Karpathy 디사이플린, Rob Pike 최적화 등.
             </p>
           </div>
         </div>
@@ -499,15 +499,15 @@
 
         <details>
           <summary>
-            <span data-lang="en">How do I create milestone plans?</span>
-            <span data-lang="ko">마일스톤 계획은 어떻게 만드나요?</span>
+            <span data-lang="en">How do I handle complex multi-step goals?</span>
+            <span data-lang="ko">복잡한 다단계 목표는 어떻게 처리하나요?</span>
           </summary>
           <div class="faq-body">
             <p data-lang="en">
-              Use <code>/clarify</code> + <code>/plan</code> for single-session tasks. Use <code>/plan --milestones</code> when you need milestone-level decomposition for complex, multi-day projects.
+              Use <code>/clarify</code> to produce a Goal Contract, then <code>/goal</code> to create the durable runtime entry. Add subgoals when the work needs decomposition.
             </p>
             <p data-lang="ko">
-              단일 세션 작업에는 <code>/clarify</code> + <code>/plan</code>을 사용하세요. 복잡한 며칠짜리 프로젝트에 마일스톤 수준 분해가 필요할 때는 <code>/plan --milestones</code>를 사용하세요.
+              <code>/clarify</code>로 Goal Contract를 만든 다음 <code>/goal</code>로 durable runtime 항목을 만드세요. 작업 분해가 필요하면 하위 목표를 추가하세요.
             </p>
           </div>
         </details>

@@ -1,6 +1,6 @@
 ---
 name: agentic-simplify
-description: Review changed code for reuse opportunities, quality issues, and inefficiencies using three parallel review agents, then fix any issues found. Triggers when the user says "agentic-simplify", "clean up the code", "review the changes", or after agentic-run-plan execution when code quality verification is needed.
+description: Review changed code for reuse opportunities, quality issues, and inefficiencies using three parallel review agents, then fix any issues found. Triggers when the user says "agentic-simplify", "clean up the code", "review the changes", or after goal implementation when code quality verification is needed.
 ---
 
 # Simplify
@@ -24,7 +24,7 @@ Changed code is the only review target. Each review dimension runs independently
 
 - After any implementation work when code quality verification is needed
 - When the user says "agentic-simplify", "clean up", "review the changes", or "check the code"
-- After agentic-run-plan execution, before agentic-review-work, as an intermediate quality pass
+- After goal implementation, before verifier-guarded completion, as an intermediate quality pass
 - When the user suspects duplicated logic, inefficiencies, or hacky patterns in recent changes
 
 ## When NOT To Use
@@ -32,7 +32,7 @@ Changed code is the only review target. Each review dimension runs independently
 - When there are no changes (no diff output)
 - When the user wants a full codebase audit (this skill reviews only the diff)
 - When the user wants only formatting or linting fixes
-- When the goal is plan verification (use `agentic-review-work` instead)
+- When the goal is independent completion verification (use the `/goal` verifier guard instead)
 
 ## Process
 
@@ -183,7 +183,7 @@ Provide this prompt to the agent:
 
 After simplification is complete:
 
-- If this was a post-implementation quality pass → suggest transitioning to `agentic-review-work` for independent plan verification
+- If this was a post-implementation quality pass → suggest requesting `/goal complete <targetId>` for independent verifier-guarded completion
 - If issues were found and fixed → user may want to run `agentic-simplify` again to verify the fixes are clean
 - If a bug was discovered during review → suggest `agentic-systematic-debugging`
 

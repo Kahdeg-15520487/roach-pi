@@ -14,48 +14,25 @@ function loadHarness() {
 
   extension(api);
 
-  const plan = commands.get("plan");
-  expect(plan).toBeDefined();
+  const goal = commands.get("goal");
+  expect(goal).toBeDefined();
 
-  return { api, commands, plan };
+  return { api, commands, goal };
 }
 
-function commandContext(confirmed: boolean) {
-  return {
-    ui: {
-      confirm: vi.fn().mockResolvedValue(confirmed),
-      setStatus: vi.fn(),
-    },
-  } as any;
-}
+describe("Goal subgoal queue mode", () => {
+  it("registers goal runtime and leaves removed workflow commands unavailable", () => {
+    const { commands, goal } = loadHarness();
+    const removedCommandName = ["pl", "an"].join("");
+    const removedMilestoneAlias = ["ultra", "pl", "an"].join("");
 
-describe("Plan milestones mode", () => {
-  it("routes explicit milestone planning through /plan", async () => {
-    const { api, commands, plan } = loadHarness();
-    const removedCommandName = ["ultra", "plan"].join("");
-
-    expect(plan.description).toContain("--milestones");
+    expect(goal.description).toContain("durable");
     expect(commands.has(removedCommandName)).toBe(false);
-
-    await plan.handler("--milestones", commandContext(true));
-
-    expect(api.sendUserMessage).toHaveBeenCalledTimes(1);
-    const prompt = api.sendUserMessage.mock.calls[0][0];
-    expect(prompt).toContain("agentic-milestone-planning");
-    expect(prompt).toContain("subagent");
-    expect(prompt).toContain("all 3 reviewer");
-    expect(prompt).not.toContain("all 5 reviewer");
-    expect(prompt).toContain("reviewer-feasibility");
-    expect(prompt).toContain("reviewer-architecture");
-    expect(prompt).toContain("reviewer-risk");
-    expect(prompt).not.toContain("reviewer-dependency");
-    expect(prompt).not.toContain("reviewer-user-value");
+    expect(commands.has(removedMilestoneAlias)).toBe(false);
   });
 
-  it("does not start milestone planning when confirmation is cancelled", async () => {
-    const { api, plan } = loadHarness();
-
-    await plan.handler("--milestones", commandContext(false));
+  it("does not start legacy workflow delegation during harness load", () => {
+    const { api } = loadHarness();
 
     expect(api.sendUserMessage).not.toHaveBeenCalled();
   });

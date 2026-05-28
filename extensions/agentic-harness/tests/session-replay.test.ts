@@ -17,6 +17,9 @@ import {
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { applyGoalCommand, createGoalState } from "../goal-state.js";
+import { createGoalStateReplayEvent, restoreGoalStateFromSnapshotAndEvents } from "../goal-events.js";
+import { createGoalStateSnapshot, goalStateSnapshotPath, writeGoalStateSnapshot } from "../goal-storage.js";
 
 const tempDirs: string[] = [];
 
@@ -132,5 +135,36 @@ describe("structured session replay", () => {
     expect(state.milestones).toHaveLength(0);
     expect(state.plans).toHaveLength(0);
     expect(state.todos).toHaveLength(0);
+  });
+
+  it("restores active goal runtime state from snapshot plus session events", async () => {
+    const rootDir = await makeTempDir();
+    let state = createGoalState("goal-run-1", "2026-05-28T00:00:00.000Z");
+    state = applyGoalCommand(state, {
+      type: "create_goal",
+      goal: { id: "goal-1", title: "Restore runtime", objective: "Restore active goal after restart" },
+    }, { now: "2026-05-28T00:01:00.000Z" }).state;
+    state = applyGoalCommand(state, { type: "activate_goal", goalId: "goal-1" }, { now: "2026-05-28T00:02:00.000Z" }).state;
+
+    await writeGoalStateSnapshot(
+      goalStateSnapshotPath(rootDir, "goal-run-1"),
+      createGoalStateSnapshot(state, { now: "2026-05-28T00:03:00.000Z" }),
+    );
+
+    const laterEvidence = createGoalStateReplayEvent("goal-run-1", {
+      type: "add_evidence",
+      targetType: "goal",
+      targetId: "goal-1",
+      evidence: "session replay restored active goal",
+    }, { now: "2026-05-28T00:04:00.000Z" });
+
+    const restored = await restoreGoalStateFromSnapshotAndEvents(rootDir, "goal-run-1", [laterEvidence]);
+
+    expect(restored.errors).toEqual([]);
+    expect(restored.state.status).toBe("active");
+    expect(restored.state.activeGoalId).toBe("goal-1");
+    expect(restored.state.goals[0].objective).toBe("Restore active goal after restart");
+    expect(restored.state.goals[0].subgoals).toHaveLength(0);
+    expect(restored.state.ledger.at(-1)?.type).toBe("evidence_added");
   });
 });
