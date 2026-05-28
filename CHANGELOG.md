@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.33.0](https://github.com/tmdgusya/roach-pi/compare/v1.32.0...v1.33.0) (2026-05-28)
+
+### Features
+
+* **agentic-harness:** replace planning flow with goal runtime ([08b8147](https://github.com/tmdgusya/roach-pi/commit/08b81477e5c394c5e3e6329f4958c6282ae6f41d))
+
 ## [1.32.0](https://github.com/tmdgusya/roach-pi/compare/v1.31.0...v1.32.0) (2026-05-28)
 
 ### Features
