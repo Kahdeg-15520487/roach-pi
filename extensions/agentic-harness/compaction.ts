@@ -8,8 +8,7 @@ export type CompactionPhase =
   | "goal_drafting"
   | "goal_active"
   | "goal_verifying"
-  | "reviewing"
-  | "ultrareviewing";
+  | "reviewing";
 
 export const MICROCOMPACT_AGE_MS = 60 * 60 * 1000;
 
@@ -110,15 +109,6 @@ The session is in /review mode. Your summary MUST emphasize:
 - The files and diff regions that were inspected
 - The current finding set across bugs, security, performance, test coverage, and consistency
 - Whether the review concluded with findings or with \"No changes to review\"`;
-
-    case "ultrareviewing":
-      return `${docRef}
-## Active Workflow: Deep Code Review
-The session is in /ultrareview mode. Your summary MUST emphasize:
-- The resolved review target and where the shared diff artifact/report path was written
-- Stage 1 reviewer coverage (roles, seeds, and whether all 10 completed)
-- Stage 2 verification status and the final surviving findings
-- Stage 3 synthesis status, saved report path, and top-priority findings streamed to chat`;
 
     default:
       return "";

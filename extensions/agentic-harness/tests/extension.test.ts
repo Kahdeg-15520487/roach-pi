@@ -161,7 +161,7 @@ describe("Extension Registration", () => {
     expect(tool.name).toBe("subagent");
     expect(tool.promptSnippet).toBeDefined();
     expect(tool.promptGuidelines).toBeDefined();
-    expect(tool.promptGuidelines.length).toBe(8);
+    expect(tool.promptGuidelines.length).toBe(7);
     expect(tool.renderCall).toBeTypeOf("function");
     expect(tool.renderResult).toBeTypeOf("function");
   });
@@ -275,7 +275,7 @@ describe("Extension Registration", () => {
     expect(commands.has("plan")).toBe(false);
     expect(commands.has(removedMilestoneCommand)).toBe(false);
     expect(commands.has("review")).toBe(true);
-    expect(commands.has("ultrareview")).toBe(true);
+    expect(commands.has("ultrareview")).toBe(false);
     expect(commands.has("ask")).toBe(true);
     expect(commands.has("team")).toBe(true);
     expect(commands.has("reset-phase")).toBe(true);

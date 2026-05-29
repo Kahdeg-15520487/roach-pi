@@ -84,8 +84,7 @@ type WorkflowPhase =
   | "goal_drafting"
   | "goal_active"
   | "goal_verifying"
-  | "reviewing"
-  | "ultrareviewing";
+  | "reviewing";
 
 let currentPhase: WorkflowPhase = "idle";
 let activeArtifactDocument: string | null = null;
@@ -97,8 +96,7 @@ function normalizeWorkflowPhase(phase: string): WorkflowPhase | undefined {
     phase === "goal_drafting" ||
     phase === "goal_active" ||
     phase === "goal_verifying" ||
-    phase === "reviewing" ||
-    phase === "ultrareviewing"
+    phase === "reviewing"
   ) {
     return phase;
   }
@@ -797,11 +795,10 @@ export default function (pi: ExtensionAPI) {
         "Delegate tasks to specialized agents (single, parallel, or chain mode)",
       promptGuidelines: [
         "Use single mode (agent + task) for one-off tasks. Use parallel mode (tasks array) for concurrent dispatch. Use chain mode (chain array) for sequential pipelines with {previous} placeholder.",
-        "ONLY use these exact agent names — do NOT invent or guess agent names: explorer, worker, planner, plan-worker, plan-validator, plan-compliance, reviewer-feasibility, reviewer-architecture, reviewer-risk, reviewer-bug, reviewer-security, reviewer-performance, reviewer-test-coverage, reviewer-consistency, reviewer-verifier, review-synthesis.",
+        "ONLY use these exact agent names — do NOT invent or guess agent names: explorer, worker, planner, plan-worker, plan-validator, plan-compliance, reviewer-feasibility, reviewer-architecture, reviewer-risk, reviewer-verifier.",
         "All agents use the default model. Do NOT specify or mention specific models (no Haiku, Sonnet, etc.).",
         "For codebase exploration: use 'explorer'. For general execution: use 'worker'. For active goals: follow /goal status and use 'reviewer-verifier' only through the goal completion guard.",
         "For implementation task validation: use 'plan-compliance' → 'plan-worker' → 'plan-validator' only when an active goal explicitly creates implementation task documents.",
-        "For ultrareview code reviews: dispatch 10 tasks in parallel (5 reviewer roles × 2 seeds): reviewer-bug, reviewer-security, reviewer-performance, reviewer-test-coverage, reviewer-consistency. Then run reviewer-verifier on the aggregated findings, then review-synthesis on the verified result.",
         "Max 12 parallel tasks with 10 concurrent. Chain mode stops on first error.",
         "When calling plan-validator, provide planFile and planTaskId so the validator can load the task document under an information barrier.",
       ],
@@ -1217,16 +1214,6 @@ Do not start multi-step implementation without a clear understanding of what the
       "- Output the review directly to chat. Do NOT save to a file. Do NOT dispatch subagents.",
       "- If the diff is empty, report 'No changes to review' and stop.",
     ].join("\n"),
-    ultrareviewing: [
-      "\n\n## Active Workflow: Deep Code Review (/ultrareview)",
-      "You are orchestrating a 3-stage code review pipeline:",
-      "- Stage 1 (finding): dispatch 10 subagents in parallel using the subagent tool's parallel mode — 5 reviewer roles (reviewer-bug, reviewer-security, reviewer-performance, reviewer-test-coverage, reviewer-consistency) × 2 seeds each. Seed 2 must be instructed to focus on findings seed 1 might miss.",
-      "- Stage 2 (verification): dispatch reviewer-verifier (single mode) on the aggregated per-role findings.",
-      "- Stage 3 (synthesis): dispatch review-synthesis (single mode) on the verifier output.",
-      "- Save the synthesis output to docs/engineering-discipline/reviews/<YYYY-MM-DD>-<topic>-review.md and stream a 5-item top-priority summary to chat.",
-      "- If the diff is empty, report 'No changes to review' and stop before dispatching any subagents.",
-      "- NEVER dispatch any agent whose name contains 'worker' — only reviewer-* and review-synthesis are allowed in this pipeline.",
-    ].join("\n"),
   };
 
   // Matches user turns that are claude-code skill/command invocations. We suppress
@@ -1421,7 +1408,6 @@ Do not start multi-step implementation without a clear understanding of what the
   const PHASE_TERMINAL_DIR: Partial<Record<WorkflowPhase, RegExp>> = {
     clarifying: /^docs\/engineering-discipline\/context\//,
     reviewing: /^docs\/engineering-discipline\/reviews\//,
-    ultrareviewing: /^docs\/engineering-discipline\/reviews\//,
   };
 
   pi.on("tool_result", async (event, ctx) => {
@@ -2015,84 +2001,6 @@ Do not start multi-step implementation without a clear understanding of what the
         "- **Consistency**: naming/convention breaks, duplication of existing utilities, pattern drift",
         "",
         "Output the review directly to chat. Group findings by file. For each finding include: what, where (file:line), severity (Critical/High/Medium/Low), and a one-line suggested fix. Do NOT save to file. Do NOT dispatch subagents — this is a single-pass review performed by you directly.",
-      ].join("\n");
-
-      pi.sendUserMessage(prompt);
-    },
-  });
-
-  pi.registerCommand("ultrareview", {
-    description:
-      "Deep multi-agent code review — 10 parallel reviewers + verification + synthesis",
-    handler: async (args, ctx) => {
-      const topic = args?.trim() || "";
-      if (topic && !REVIEW_TOPIC_RE.test(topic)) {
-        ctx.ui.notify(
-          `Invalid review target: "${topic}". Expected a PR number (e.g. 27), a branch name (e.g. feature/foo), or a PR URL (e.g. https://github.com/owner/repo/pull/27). Only alphanumerics, dot, dash, underscore, slash, and colon are allowed.`,
-          "error"
-        );
-        return;
-      }
-
-      const confirmed = await ctx.ui.confirm(
-        "Start Ultrareview",
-        "The agent will:\n1. Auto-detect the review target (PR or local diff)\n2. Dispatch 10 subagents in parallel (5 reviewers × 2 seeds)\n3. Run a verification pass to dedupe and filter\n4. Synthesize the final report and save to docs/engineering-discipline/reviews/\n\nThis may take several minutes. Proceed?"
-      );
-      if (!confirmed) return;
-
-      currentPhase = "ultrareviewing";
-      activeArtifactDocument = null;
-      ctx.ui.setStatus("harness", "Ultrareview pipeline in progress...");
-
-      const targetClause = topic
-        ? `Review target: "${topic}" (may be a PR number, a PR URL, or a branch name). If it is a number or contains "://" (a URL), treat it as a PR reference and fetch the diff with \`gh pr diff ${topic}\` — \`gh\` accepts PR numbers and full PR URLs interchangeably. Otherwise treat it as a branch name and diff it against main with \`git diff main...${topic}\`.`
-        : `Review target: auto-detect. First run \`git rev-parse --abbrev-ref HEAD\` to get the current branch. Then run \`gh pr list --head <branch> --json number --jq '.[0].number'\` to check for a matching PR. If a PR exists, use \`gh pr diff <number>\`. Otherwise, combine \`git diff main...HEAD\` with uncommitted changes from \`git diff\` and \`git diff --cached\`.`;
-
-      const prompt = [
-        "You are orchestrating a multi-stage code review pipeline. Execute all three stages in order.",
-        "",
-        targetClause,
-        "",
-        "If the diff is empty, report \"No changes to review\" and stop before dispatching any subagents.",
-        "",
-        "## Stage 1: Finding (parallel fleet)",
-        "",
-        "First, resolve the diff once and write it to a shared artifact such as `docs/engineering-discipline/reviews/.tmp/<date>-<topic>.diff` so all reviewers can read the same source without duplicating the full diff payload 10 times.",
-        "",
-        "Dispatch **10 subagents in parallel** using the subagent tool's parallel mode. This is 5 reviewer roles × 2 seeds each:",
-        "- reviewer-bug (seed 1, seed 2)",
-        "- reviewer-security (seed 1, seed 2)",
-        "- reviewer-performance (seed 1, seed 2)",
-        "- reviewer-test-coverage (seed 1, seed 2)",
-        "- reviewer-consistency (seed 1, seed 2)",
-        "",
-        "For each task in the tasks array, the `task` field must include:",
-        "1. The shared diff artifact path (or, only if absolutely necessary for a very small diff, a minimal relevant diff excerpt rather than the full inline diff)",
-        "2. The list of affected file paths",
-        "3. The seed number with this instruction: seed 1 = \"Perform a fresh independent pass\"; seed 2 = \"You are seed 2 — focus on findings seed 1 might miss by examining edge cases and alternative execution paths.\"",
-        "4. An explicit instruction to read the shared diff artifact before opening touched files",
-        "",
-        "Invoke the subagent tool ONCE in parallel mode with a tasks array of 10 entries.",
-        "",
-        "## Stage 2: Verification",
-        "",
-        "After all 10 reviewers complete, aggregate their raw findings grouped by role (concatenate seed 1 and seed 2 outputs per role). Then dispatch `reviewer-verifier` in single mode with the aggregated findings as the task. The verifier will deduplicate, filter false positives, and assign final severity/confidence.",
-        "",
-        "## Stage 3: Synthesis",
-        "",
-        "Dispatch `review-synthesis` in single mode. The task must substitute these template slots:",
-        "- `{VERIFIED_FINDINGS}` = verifier output from Stage 2",
-        "- `{REVIEW_TARGET}` = the resolved target (e.g., 'PR #123' or 'branch feature/foo')",
-        "- `{REVIEW_DATE}` = today's date as YYYY-MM-DD",
-        "",
-        "## Output",
-        "",
-        "1. Compute `<topic>`: if PR mode, use `pr-<number>`; if branch mode, use the sanitized branch name (replace `/` with `-`, lowercase).",
-        "2. Compute `<date>`: today's date as YYYY-MM-DD.",
-        "3. Write the full synthesis report to `docs/engineering-discipline/reviews/<date>-<topic>-review.md`. Create the directory if it does not exist.",
-        "4. Stream a brief summary to chat: the 5 highest-priority findings (by severity then confidence), each with file:line and one-line description, plus the full saved path.",
-        "",
-        "NEVER dispatch any agent whose name contains \"worker\". Use only the reviewer-* and review-synthesis agents defined for this pipeline.",
       ].join("\n");
 
       pi.sendUserMessage(prompt);

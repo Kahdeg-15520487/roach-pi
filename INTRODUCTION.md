@@ -8,7 +8,7 @@ The core workflow is **clarify → plan → implement → verify**. When you sta
 
 Beyond the core loop, ROACH PI bundles seven extensions that make pi feel more like an IDE than a chat box:
 
-- **Agentic Harness** — subagent orchestration (single, parallel, chain, async), multi-reviewer pipelines (`/ultrareview` dispatches 10 specialized reviewers in parallel), team mode, and structured progress tracking with live footer state.
+- **Agentic Harness** — subagent orchestration (single, parallel, chain, async), single-pass code review (`/review`), team mode, and structured progress tracking with live footer state.
 - **FFF Search** — git-aware fuzzy file and content search with frecency ranking, replacing pi's default search. Powers both tools and `@` autocomplete.
 - **LSP Code Intelligence** — IDE-grade operations inside pi: diagnostics, go-to-definition, find references, workspace-wide rename. Ships with 40+ language server configs.
 - **Workspace Memory** — structured save/recall of findings, bug fixes, and decisions across sessions, so the agent stops rediscovering the same things.

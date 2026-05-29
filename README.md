@@ -32,7 +32,7 @@
 - [Quick Start](#quick-start)
 - [Clarify and Goal](#clarify-and-goal)
 - [Subagent Orchestration](#subagent-orchestration)
-- [Review Pipelines](#review-pipelines)
+- [Review](#review)
 - [FFF Search](#fff-search)
 - [LSP Code Intelligence](#lsp-code-intelligence)
 - [MCP Adapter](#mcp-adapter)
@@ -108,7 +108,7 @@ The runtime creates/activates the goal, drives implementation, records evidence,
 Before merging non-trivial changes, run a review:
 
 ```text
-/ultrareview
+/review
 ```
 
 Quick system checks for visibility:
@@ -162,28 +162,15 @@ Async subagents support `asyncDependency: "needed-before-final"` when the lead a
 
 ---
 
-## Review Pipelines
+## Review
 
-Two levels of review, one unified goal: catch problems before they ship.
+Catch problems before they ship.
 
-**`/review`** — quick integrated review of a PR, branch, or local diff.
-
-**`/ultrareview`** — the deep pass:
-
-<p align="center">
-  <img src="assets/review-search-preview.svg" alt="ROACH PI ultrareview pipeline: 10 reviewers → verifier → synthesis" width="88%">
-</p>
-
-1. resolve the diff once
-2. dispatch 10 reviewers in parallel
-3. run `reviewer-verifier` to dedupe and filter false positives
-4. run `review-synthesis`
-5. save the final report under `docs/engineering-discipline/reviews/`
+**`/review`** — a quick, integrated single-pass review of a PR, branch, or local diff. It resolves the target (PR number, PR URL, branch name, or an auto-detected local diff), then streams findings across bugs, security, performance, test coverage, and consistency directly to chat. No subagents, no saved file — just fast feedback.
 
 | Command | Description |
 |---|---|
 | `/review [target]` | Quick single-pass review. Target can be omitted, PR number, PR URL, or branch |
-| `/ultrareview [target]` | Deep 10-reviewer pipeline with verifier and synthesis report |
 
 ---
 
@@ -321,7 +308,6 @@ pi --no-nested-agents    Disable at startup
 | Command | Description |
 |---|---|
 | `/review [target]` | Quick single-pass review (omit target, PR number, URL, or branch) |
-| `/ultrareview [target]` | Deep 10-reviewer pipeline with verifier and synthesis report |
 
 ### Search, LSP, Memory
 

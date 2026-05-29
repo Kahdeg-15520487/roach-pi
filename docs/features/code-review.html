@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Code Review — ROACH PI</title>
-  <meta name="description" content="Deep-dive documentation for ROACH PI code review modes: /review (single-pass) and /ultrareview (multi-agent pipeline with 10 parallel reviewers).">
+  <meta name="description" content="Deep-dive documentation for ROACH PI code review: /review, a single-pass review of a PR, branch, or local diff.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪳</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -58,10 +58,6 @@
         <li><a href="#overview"><span data-lang="en">Overview</span><span data-lang="ko">개요</span></a></li>
         <li><a href="#review"><span data-lang="en">/review</span><span data-lang="ko">/review</span></a></li>
         <li><a href="#diff-commands"><span data-lang="en">Diff Commands</span><span data-lang="ko">Diff 명령어</span></a></li>
-        <li><a href="#ultrareview"><span data-lang="en">/ultrareview</span><span data-lang="ko">/ultrareview</span></a></li>
-        <li><a href="#reviewer-roles"><span data-lang="en">Reviewer Roles</span><span data-lang="ko">리뷰어 역할</span></a></li>
-        <li><a href="#verification"><span data-lang="en">Verification</span><span data-lang="ko">검증</span></a></li>
-        <li><a href="#choosing-modes"><span data-lang="en">Choosing Modes</span><span data-lang="ko">모드 선택</span></a></li>
       </ul>
     </aside>
 
@@ -76,23 +72,11 @@
           <span data-lang="ko">개요</span>
         </h2>
         <p data-lang="en">
-          ROACH PI provides two code review modes with different depth and cost trade-offs:
+          ROACH PI provides <code>/review</code> — a single-pass code review performed directly by the current agent. Fast, lightweight, and free of subagent overhead.
         </p>
         <p data-lang="ko">
-          ROACH PI는 깊이와 비용 트레이드오프가 다른 두 가지 코드 리뷰 모드를 제공합니다:
+          ROACH PI는 <code>/review</code>를 제공합니다 — 현재 에이전트가 직접 수행하는 단일 패스 코드 리뷰. 빠르고 가벼우며 서브에이전트 오버헤드가 없습니다.
         </p>
-        <ul>
-          <li>
-            <code>/review</code> —
-            <span data-lang="en">single-pass review performed directly by the current agent. Fast, lightweight, no subagent overhead.</span>
-            <span data-lang="ko">현재 에이전트가 직접 수행하는 단일 패스 리뷰. 빠르고 가벼우며 서브에이전트 오버헤드 없음.</span>
-          </li>
-          <li>
-            <code>/ultrareview</code> —
-            <span data-lang="en">multi-agent pipeline that dispatches 10 parallel reviewers, a verification pass, and a synthesis step. Thorough but slower.</span>
-            <span data-lang="ko">10개의 병렬 리뷰어, 검증 패스, 종합 단계를 디스패치하는 다중 에이전트 파이프라인. 철저하지만 느림.</span>
-          </li>
-        </ul>
       </section>
 
       <!-- /review -->
@@ -150,8 +134,8 @@
           <span data-lang="ko">Diff 명령어</span>
         </h2>
 
-        <p data-lang="en">Both <code>/review</code> and <code>/ultrareview</code> use the same target resolution logic:</p>
-        <p data-lang="ko"><code>/review</code>와 <code>/ultrareview</code> 모두 동일한 타겟 해결 로직을 사용합니다:</p>
+        <p data-lang="en"><code>/review</code> resolves its target with the following logic:</p>
+        <p data-lang="ko"><code>/review</code>는 다음 로직으로 타겟을 해결합니다:</p>
 
         <table class="doc-table">
           <thead>
@@ -194,198 +178,6 @@
           <p data-lang="ko" style="margin-bottom:0">
             <code>gh</code>는 PR 번호와 전체 GitHub PR URL을 상호 교환적으로 허용합니다 — 별도의 URL 파싱이 필요 없습니다.
           </p>
-        </div>
-      </section>
-
-      <!-- /ultrareview -->
-      <section class="doc-section" id="ultrareview">
-        <h2>
-          <span class="icon">★</span>
-          <code>/ultrareview</code>
-          <span data-lang="en"> — Multi-Agent Pipeline</span><span data-lang="ko"> — 다중 에이전트 파이프라인</span>
-        </h2>
-
-        <p data-lang="en">
-          The ultrareview command dispatches a <strong>3-stage pipeline</strong> with up to <strong>12 subagent invocations</strong>. A confirmation dialog is required before the pipeline starts.
-        </p>
-        <p data-lang="ko">
-          ultrareview 명령어는 최대 <strong>12개의 서브에이전트 호출</strong>로 <strong>3단계 파이프라인</strong>을 디스패치합니다. 파이프라인 시작 전 확인 대화상자가 필요합니다.
-        </p>
-
-        <h3>
-          <span data-lang="en">Stage 1: Finding (10 parallel reviewers)</span><span data-lang="ko">1단계: 발견 (10개 병렬 리뷰어)</span>
-        </h3>
-        <p data-lang="en">
-          The diff is resolved once and written to a <strong>shared artifact</strong> (e.g. <code>docs/engineering-discipline/reviews/.tmp/&lt;date&gt;-&lt;topic&gt;.diff</code>). Then <strong>10 subagents</strong> are dispatched in parallel — <strong>5 reviewer roles × 2 seeds</strong> each. Seed 2 is instructed to focus on findings seed 1 might miss.
-        </p>
-        <p data-lang="ko">
-          diff는 한 번 해결되어 <strong>공유 아티팩트</strong>(예: <code>docs/engineering-discipline/reviews/.tmp/&lt;date&gt;-&lt;topic&gt;.diff</code>)에 작성됩니다. 그 후 <strong>10개의 서브에이전트</strong>가 병렬로 디스패치됩니다 — <strong>5개 리뷰어 역할 × 시드 2개</strong>. 시드 2는 시드 1이 놓칠 수 있는 발견에 집중하도록 지시받습니다.
-        </p>
-
-        <h3>
-          <span data-lang="en">Stage 2: Verification</span><span data-lang="ko">2단계: 검증</span>
-        </h3>
-        <p data-lang="en">
-          <code>reviewer-verifier</code> is dispatched in single mode with the aggregated findings from all 10 reviewers. It deduplicates findings, filters false positives, and assigns final <strong>severity</strong> and <strong>confidence</strong> ratings.
-        </p>
-        <p data-lang="ko">
-          10개 리뷰어의 모든 집계된 발견과 함께 <code>reviewer-verifier</code>가 단일 모드로 디스패치됩니다. 발견을 중복 제거하고, 위양성을 필터링하며, 최종 <strong>심각도</strong> 및 <strong>신뢰도</strong> 등급을 부여합니다.
-        </p>
-
-        <h3>
-          <span data-lang="en">Stage 3: Synthesis</span><span data-lang="ko">3단계: 종합</span>
-        </h3>
-        <p data-lang="en">
-          <code>review-synthesis</code> is dispatched in single mode with the verified findings. It produces a structured report and saves it to <code>docs/engineering-discipline/reviews/&lt;YYYY-MM-DD&gt;-&lt;topic&gt;-review.md</code>. A 5-item top-priority summary is also streamed to chat.
-        </p>
-        <p data-lang="ko">
-          검증된 발견과 함께 <code>review-synthesis</code>가 단일 모드로 디스패치됩니다. 구조화된 리포트를 생성하고 <code>docs/engineering-discipline/reviews/&lt;YYYY-MM-DD&gt;-&lt;topic&gt;-review.md</code>에 저장합니다. 최우선 5개 항목 요약도 채팅에 스트리밍됩니다.
-        </p>
-
-        <div class="doc-callout doc-callout-warn">
-          <div class="doc-callout-title">
-            <span data-lang="en">⚠ Guard</span><span data-lang="ko">⚠ 가드</span>
-          </div>
-          <p data-lang="en" style="margin-bottom:0">
-            No agent whose name contains <code>"worker"</code> is ever dispatched in this pipeline — only <code>reviewer-*</code> and <code>review-synthesis</code> are allowed.
-          </p>
-          <p data-lang="ko" style="margin-bottom:0">
-            이 파이프라인에서는 이름에 <code>"worker"</code>가 포함된 에이전트는 디스패치되지 않습니다 — <code>reviewer-*</code>와 <code>review-synthesis</code>만 허용됩니다.
-          </p>
-        </div>
-      </section>
-
-      <!-- Reviewer Roles -->
-      <section class="doc-section" id="reviewer-roles">
-        <h2>
-          <span class="icon">■</span>
-          <span data-lang="en">Reviewer Roles</span><span data-lang="ko">리뷰어 역할</span>
-        </h2>
-
-        <p data-lang="en">Each of the 5 reviewer roles is dispatched twice (seed 1 and seed 2) for complementary coverage:</p>
-        <p data-lang="ko">5개 리뷰어 역할 각각이 상호 보완적 커버리지를 위해 두 번(시드 1과 시드 2) 디스패치됩니다:</p>
-
-        <table class="doc-table">
-          <thead>
-            <tr>
-              <th><span data-lang="en">Role</span><span data-lang="ko">역할</span></th>
-              <th><span data-lang="en">Focus</span><span data-lang="ko">집중 영역</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>reviewer-bug</code></td>
-              <td>
-                <span data-lang="en">Logic errors, boundary conditions, null/undefined, race conditions, missing error handling</span>
-                <span data-lang="ko">논리 오류, 경계 조건, null/undefined, 레이스 컨디션, 누락된 에러 핸들링</span>
-              </td>
-            </tr>
-            <tr>
-              <td><code>reviewer-security</code></td>
-              <td>
-                <span data-lang="en">Injection, auth, authorization, crypto misuse, data exposure</span>
-                <span data-lang="ko">인젝션, 인증, 인가, 암호화 오용, 데이터 노출</span>
-              </td>
-            </tr>
-            <tr>
-              <td><code>reviewer-performance</code></td>
-              <td>
-                <span data-lang="en">Algorithmic complexity, unnecessary allocations, sync I/O on hot paths, cache misses</span>
-                <span data-lang="ko">알고리즘 복잡도, 불필요한 할당, 핫 경로의 동기 I/O, 캐시 미스</span>
-              </td>
-            </tr>
-            <tr>
-              <td><code>reviewer-test-coverage</code></td>
-              <td>
-                <span data-lang="en">Missing tests, happy-path only, uncovered edge cases</span>
-                <span data-lang="ko">누락된 테스트, 해피 패스만 존재, 커버되지 않은 엣지 케이스</span>
-              </td>
-            </tr>
-            <tr>
-              <td><code>reviewer-consistency</code></td>
-              <td>
-                <span data-lang="en">Convention drift, duplication, missing reuse of existing utilities</span>
-                <span data-lang="ko">컨벤션 드리프트, 중복, 기존 유틸리티의 재사용 누락</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <!-- Verification -->
-      <section class="doc-section" id="verification">
-        <h2>
-          <span class="icon">●</span>
-          <span data-lang="en">Verification &amp; Synthesis</span><span data-lang="ko">검증 및 종합</span>
-        </h2>
-
-        <h3>
-          <code>reviewer-verifier</code>
-        </h3>
-        <p data-lang="en">
-          Receives the aggregated output from all 10 reviewers. Performs three actions:
-        </p>
-        <p data-lang="ko">
-          10개 리뷰어의 집계된 출력을 받습니다. 세 가지 작업을 수행합니다:
-        </p>
-        <ul>
-          <li>
-            <span data-lang="en"><strong>Deduplicate</strong> — removes findings reported by multiple reviewers for the same location.</span>
-            <span data-lang="ko"><strong>중복 제거</strong> — 동일한 위치에 대해 여러 리뷰어가 보고한 발견을 제거합니다.</span>
-          </li>
-          <li>
-            <span data-lang="en"><strong>Filter false positives</strong> — discards findings that don't hold against the actual codebase.</span>
-            <span data-lang="ko"><strong>위양성 필터</strong> — 실제 코드베이스에서 성립하지 않는 발견을 버립니다.</span>
-          </li>
-          <li>
-            <span data-lang="en"><strong>Attach ratings</strong> — assigns <code>severity</code> (low / medium / high / critical) and <code>confidence</code> to each surviving finding.</span>
-            <span data-lang="ko"><strong>등급 부여</strong> — 각 생존 발견에 <code>심각도</code>(low / medium / high / critical)와 <code>신뢰도</code>를 부여합니다.</span>
-          </li>
-        </ul>
-
-        <h3>
-          <code>review-synthesis</code>
-        </h3>
-        <p data-lang="en">
-          Takes the verified findings and produces the final structured review report. Writes to <code>docs/engineering-discipline/reviews/&lt;YYYY-MM-DD&gt;-&lt;topic&gt;-review.md</code>. The report includes a summary, per-file findings ranked by severity, and a top-priority list streamed to chat.
-        </p>
-        <p data-lang="ko">
-          검증된 발견을 받아 최종 구조화된 리뷰 리포트를 생성합니다. <code>docs/engineering-discipline/reviews/&lt;YYYY-MM-DD&gt;-&lt;topic&gt;-review.md</code>에 작성합니다. 리포트에는 요약, 심각도별 순위의 파일별 발견, 채팅에 스트리밍되는 최우선 목록이 포함됩니다.
-        </p>
-      </section>
-
-      <!-- Choosing Modes -->
-      <section class="doc-section" id="choosing-modes">
-        <h2>
-          <span class="icon">▶</span>
-          <span data-lang="en">Choosing Between Modes</span><span data-lang="ko">모드 선택 가이드</span>
-        </h2>
-
-        <div class="grid-2" style="margin-top: 1.5rem;">
-          <div class="card">
-            <span class="feature-icon">▶</span>
-            <div class="feature-title"><code>/review</code></div>
-            <div class="feature-desc">
-              <p data-lang="en">
-                Quick feedback on small changes. Single-pass, no subagents, instant output to chat. Ideal for PRs under ~200 lines or when you just need a second pair of eyes.
-              </p>
-              <p data-lang="ko">
-                작은 변경 사항에 대한 빠른 피드백. 단일 패스, 서브에이전트 없음, 채팅에 즉시 출력. 약 200줄 미만의 PR이나 간단한 검토가 필요할 때 적합합니다.
-              </p>
-            </div>
-          </div>
-          <div class="card">
-            <span class="feature-icon">★</span>
-            <div class="feature-title"><code>/ultrareview</code></div>
-            <div class="feature-desc">
-              <p data-lang="en">
-                Major PRs, architectural changes, or when thorough coverage is critical. 10 parallel reviewers + verification + synthesis. Takes several minutes but produces a saved, structured report.
-              </p>
-              <p data-lang="ko">
-                주요 PR, 아키텍처 변경, 철저한 커버리지가 중요할 때. 10개 병렬 리뷰어 + 검증 + 종합. 몇 분이 걸리지만 저장되는 구조화된 리포트를 생성합니다.
-              </p>
-            </div>
-          </div>
         </div>
       </section>
 
