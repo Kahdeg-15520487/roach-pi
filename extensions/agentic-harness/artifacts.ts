@@ -45,10 +45,6 @@ export function getArtifactRunDir(options: Pick<ArtifactOptions, "cwd" | "rootRu
   );
 }
 
-export function getArtifactOutputPath(options: Pick<ArtifactOptions, "cwd" | "rootRunId" | "runId" | "agentName"> & { output: string }): string {
-  return resolveArtifactPath(getArtifactRunDir(options), options.output);
-}
-
 function isInside(parent: string, child: string): boolean {
   const rel = relative(parent, child);
   return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel));

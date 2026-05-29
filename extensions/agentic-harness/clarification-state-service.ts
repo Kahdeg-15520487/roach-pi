@@ -72,17 +72,6 @@ export async function persistClarificationState(
   );
 }
 
-export function emitClarificationStateEvent(
-  ctx: { sessionManager?: any } | undefined,
-  state: ClarificationState,
-  command: ClarificationCommand,
-  now?: string,
-): ClarificationStateReplayEvent {
-  const event = createClarificationStateReplayEvent(state.runId, command, { now: now || isoNow() });
-  ctx?.sessionManager?.appendCustomEntry?.(CLARIFICATION_STATE_EVENT_CUSTOM_TYPE, event);
-  return event;
-}
-
 export async function applyAndPersistClarificationCommand(
   runId: string,
   rootDir: string | undefined,

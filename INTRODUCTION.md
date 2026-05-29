@@ -2,7 +2,7 @@
 
 ROACH PI is an extension suite for the pi coding agent that turns freeform coding sessions into a disciplined engineering loop. It's built around a simple conviction: **vague requests should not become vague code**.
 
-The core workflow is **clarify → plan → implement → verify**. When you start a task, ROACH PI first forces ambiguity into the open with dynamic, context-aware questions (`/clarify`), then converts the clarified scope into an executable implementation plan (`/plan`), and runs the implementation through a **compliance → worker → validator** loop where building and verification stay separated.
+The core workflow is **clarify → goal → implement → verify**. When you start a task, ROACH PI first forces ambiguity into the open with dynamic, context-aware questions (`/clarify`), then converts the clarified scope into a durable goal (`/goal`) that runs through subgoals, evidence capture, and verifier-gated completion.
 
 ## Extensions
 

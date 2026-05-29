@@ -15,13 +15,6 @@ export function getEnabledCodePreviewTools(): Set<CodePreviewToolName> {
   return enabled;
 }
 
-export function isCodePreviewToolEnabled(
-  name: CodePreviewToolName,
-  enabled = getEnabledCodePreviewTools(),
-): boolean {
-  return enabled.has(name);
-}
-
 export function formatEnabledCodePreviewTools(enabled = getEnabledCodePreviewTools()): string {
   return ALL_CODE_PREVIEW_TOOLS.filter((tool) => enabled.has(tool)).join(", ") || "none";
 }

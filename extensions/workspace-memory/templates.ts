@@ -41,38 +41,6 @@ export const TRIGGER_KEYWORDS: Record<string, MemoryTemplate> = {
 export const ALL_TRIGGER_KEYWORDS = Object.keys(TRIGGER_KEYWORDS);
 
 // ---------------------------------------------------------------------------
-// Template prompts (for LLM when saving memory)
-// ---------------------------------------------------------------------------
-
-export const TEMPLATE_PROMPTS: Record<MemoryTemplate, string> = {
-	"post-mortem": `
-This conversation appears to involve resolving an issue, bug, or incident.
-Please create a post-mortem memory with these sections:
-- Problem: What went wrong? (symptoms, error messages, impact)
-- Root Cause: Why did it happen? (technical reason, underlying issue)
-- Fix: How was it resolved? (code changes, commands, configuration)
-- Prevention: How to prevent recurrence? (monitoring, tests, process improvements)
-
-Be concise but specific. Include file names, error messages, or commands if relevant.
-`,
-	"decision-record": `
-This conversation involves an important decision or architectural choice.
-Please create a decision record with these sections:
-- Context: What situation led to this decision?
-- Decision: What was decided?
-- Rationale: Why this choice over alternatives?
-- Alternatives Considered: What else was evaluated?
-
-Keep it focused on the decision and its reasoning.
-`,
-	"compact-note": `
-Summarize the key information from this conversation in 2-3 sentences.
-Focus on actionable takeaways or important context for future reference.
-If there are specific file names, commands, or configurations, include them.
-`,
-};
-
-// ---------------------------------------------------------------------------
 // Template descriptions for user-facing output
 // ---------------------------------------------------------------------------
 
@@ -153,13 +121,6 @@ export function selectTemplateFromKeywords(keywords: string[]): MemoryTemplate {
 	}
 
 	return bestTemplate;
-}
-
-/**
- * Get the save prompt for a given template
- */
-export function getSavePrompt(template: MemoryTemplate): string {
-	return TEMPLATE_PROMPTS[template];
 }
 
 import { escapeRegex } from "./utils";

@@ -75,17 +75,6 @@ export async function persistGoalState(
   );
 }
 
-export function emitGoalStateEvent(
-  ctx: { sessionManager?: any } | undefined,
-  state: GoalState,
-  command: GoalCommand,
-  now?: string,
-): GoalStateReplayEvent {
-  const event = createGoalStateReplayEvent(state.runId, command, { now: now || isoNow() });
-  ctx?.sessionManager?.appendCustomEntry?.(GOAL_STATE_EVENT_CUSTOM_TYPE, event);
-  return event;
-}
-
 export async function applyAndPersistGoalCommand(
   runId: string,
   rootDir: string | undefined,

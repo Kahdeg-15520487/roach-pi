@@ -72,10 +72,6 @@ export function getTodoMarker(status: string): string {
   return "○";
 }
 
-export function countOpenTodos(todos: SimpleTodoItem[]): number {
-  return todos.filter((t) => !isTerminalStatus(t.status)).length;
-}
-
 /** Restore todos from session branch entries on session start */
 export function restoreTodosFromBranchEntries(entries: unknown[]): void {
   let restored: SimpleTodoItem[] = [];
@@ -99,10 +95,4 @@ function isValidTodoItem(item: unknown): item is SimpleTodoItem {
   if (!item || typeof item !== "object") return false;
   const t = item as Record<string, unknown>;
   return typeof t.content === "string" && typeof t.status === "string" && typeof t.priority === "string";
-}
-
-/** Get summary for footer display: "2/5 done" */
-export function getTodoSummary(todos: SimpleTodoItem[]): string {
-  const done = todos.filter((t) => t.status === "completed").length;
-  return `${done}/${todos.length}`;
 }

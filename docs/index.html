@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ROACH PI — Pi Engineering Discipline Extension</title>
-  <meta name="description" content="Strict engineering discipline and agentic orchestration for the pi coding agent. Multi-agent workflows, plan execution, and milestone planning.">
+  <meta name="description" content="Strict engineering discipline and agentic orchestration for the pi coding agent. Multi-agent workflows, durable goal execution, and verifier-gated delivery.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪳</text></svg>">
   <script>
     (function () {
@@ -94,8 +94,8 @@
             <span data-lang="ko"><span class="em-italic grad">엔지니어링</span> 디사이플린, 에이전트가 내장된.</span>
           </h1>
           <p class="hero-subtitle">
-            <span data-lang="en">Strict engineering discipline and agentic orchestration for the <strong>pi coding agent</strong>. Multi-agent workflows, executable plans, and milestone-level decomposition.</span>
-            <span data-lang="ko"><strong>pi 코딩 에이전트</strong>를 위한 엄격한 엔지니어링 디사이플린과 에이전트 오케스트레이션. 다중 에이전트 워크플로, 실행 가능한 계획, 마일스톤 분해.</span>
+            <span data-lang="en">Strict engineering discipline and agentic orchestration for the <strong>pi coding agent</strong>. Multi-agent workflows, durable goals, and verifier-gated delivery.</span>
+            <span data-lang="ko"><strong>pi 코딩 에이전트</strong>를 위한 엄격한 엔지니어링 디사이플린과 에이전트 오케스트레이션. 다중 에이전트 워크플로, 지속형 목표, 검증 기반 전달.</span>
           </p>
           <div class="hero-install">
             <span class="mit-pill">MIT License</span>
@@ -389,10 +389,10 @@
           </div>
           <div class="feature-desc">
             <p data-lang="en">
-              Karpathy rules auto-injected into code-writing agents. Automatic slop-cleaner spawns after successful runs to remove LLM-specific patterns while preserving behavior.
+              Karpathy rules are auto-injected into code-writing agents so implementation stays surgical, evidence-based, and scoped to the active goal.
             </p>
             <p data-lang="ko">
-              Karpathy 규칙이 코드 작성 에이전트에 자동 주입됩니다. 성공적인 실행 후 동작을 유지하면서 LLM 특정 패턴을 제거하는 자동 슬롭 클리너가 실행됩니다.
+              Karpathy 규칙이 코드 작성 에이전트에 자동 주입되어 구현이 활성 목표 범위 안에서 외과적이고 증거 기반으로 유지됩니다.
             </p>
           </div>
         </div>
@@ -400,15 +400,15 @@
         <div class="card">
           <span class="feature-icon">■</span>
           <div class="feature-title">
-            <span data-lang="en">Plan Execution Pipeline</span>
-            <span data-lang="ko">계획 실행 파이프라인</span>
+            <span data-lang="en">Goal Runtime Pipeline</span>
+            <span data-lang="ko">목표 런타임 파이프라인</span>
           </div>
           <div class="feature-desc">
             <p data-lang="en">
-              <strong>plan-compliance</strong> → <strong>plan-worker</strong> → <strong>plan-validator</strong> pipeline with information barriers. Validators never see execution context — they judge solely from the plan document and codebase.
+              <strong>/goal</strong> tracks active subgoals, evidence, blockers, and verifier receipts. Completion only lands after <strong>reviewer-verifier</strong> independently returns PASS.
             </p>
             <p data-lang="ko">
-              정보 장벽이 있는 <strong>plan-compliance</strong> → <strong>plan-worker</strong> → <strong>plan-validator</strong> 파이프라인. 검증자는 실행 컨텍스트를 보지 않습니다 — 계획 문서와 코드베이스만으로 판단합니다.
+              <strong>/goal</strong>은 활성 하위 목표, 증거, 차단 요소, 검증 영수증을 추적합니다. 완료는 <strong>reviewer-verifier</strong>가 독립적으로 PASS를 반환한 뒤에만 확정됩니다.
             </p>
           </div>
         </div>
@@ -572,15 +572,15 @@
 
         <details>
           <summary>
-            <span data-lang="en">What does the slop-cleaner do?</span>
-            <span data-lang="ko">슬롭 클리너는 무엇을 하나요?</span>
+            <span data-lang="en">How does engineering discipline stay enforced?</span>
+            <span data-lang="ko">엔지니어링 디사이플린은 어떻게 유지되나요?</span>
           </summary>
           <div class="faq-body">
             <p data-lang="en">
-              The slop-cleaner automatically runs after successful <code>worker</code> or <code>plan-worker</code> executions. It detects and removes LLM-specific code patterns (unnecessary comments, over-verbose logging, redundant type assertions, etc.) while preserving the original behavior.
+              The harness injects focused implementation guardrails into code-writing agents: read before writing, keep changes scoped, verify assumptions, and record evidence before completion.
             </p>
             <p data-lang="ko">
-              슬롭 클리너는 <code>worker</code> 또는 <code>plan-worker</code> 실행 성공 후 자동으로 실행됩니다. 원래 동작을 유지하면서 LLM 특정 코드 패턴(불필요한 주석, 과도한 로깅, 중복 타입 단언 등)을 감지하고 제거합니다.
+              하네스는 코드 작성 에이전트에 집중된 구현 가드레일을 주입합니다. 쓰기 전에 읽고, 변경 범위를 지키며, 가정을 검증하고, 완료 전에 증거를 기록합니다.
             </p>
           </div>
         </details>

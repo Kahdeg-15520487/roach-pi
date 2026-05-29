@@ -73,17 +73,6 @@ export async function persistHarnessState(
   await writeHarnessStateSnapshot(path, snapshot);
 }
 
-export function emitHarnessEvent(
-  ctx: { sessionManager?: any },
-  state: HarnessState,
-  command: HarnessCommand,
-  now?: string,
-  rootDir?: string,
-): void {
-  const event = createHarnessReplayEvent(state, command, { now: now || isoNow(), rootDir });
-  ctx.sessionManager?.appendCustomEntry?.(HARNESS_STATE_EVENT_CUSTOM_TYPE, event);
-}
-
 export async function applyAndPersistFromLoadedState(
   runId: string,
   rootDir: string | undefined,

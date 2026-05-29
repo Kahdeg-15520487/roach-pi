@@ -28,23 +28,6 @@ export function countFileLines(content: string): number {
   return withoutFinalTerminator.split("\n").length;
 }
 
-export function renderHighlightedPreviewLines(
-  rawLines: string[],
-  limit: number,
-  lang: string | undefined,
-  theme: Theme,
-  invalidate?: () => void,
-  lineNumbers?: { firstLine: number; lineNumberWidth?: number },
-): { lines: string[]; shown: number; hidden: number } {
-  return renderHighlightedPreviewEntries(
-    selectPreviewLines(rawLines, limit),
-    lang,
-    theme,
-    invalidate,
-    lineNumbers,
-  );
-}
-
 export function renderHighlightedPreviewText(
   text: string,
   limit: number,

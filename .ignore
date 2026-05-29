@@ -1,6 +1,5 @@
-# Historical engineering artifacts and archived legacy skills are retained for audit history,
+# Historical engineering artifacts are retained for audit history,
 # but are not user-facing runtime surfaces.
-extensions/agentic-harness/internal-archive/**
 docs/engineering-discipline/plans/**
 docs/engineering-discipline/harness/**
 docs/engineering-discipline/reviews/**

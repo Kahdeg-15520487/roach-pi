@@ -56,15 +56,3 @@ export interface Memory {
 	metadata: MemoryMetadata;
 	content: MemoryContent;
 }
-
-export interface MemorySaveInput {
-	content: string;
-	template: MemoryTemplate;
-	tags?: string[];
-}
-
-export interface KeywordTemplateMapping {
-	keywords: string[];
-	template: MemoryTemplate;
-	prompt: string;
-}

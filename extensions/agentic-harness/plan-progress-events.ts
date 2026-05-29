@@ -6,9 +6,6 @@
  * or rendering class.
  */
 
-import { isAbsolute, resolve } from "path";
-import { parsePlan } from "./plan-parser.js";
-
 
 const ENGINEERING_PLAN_PATH_RE = /(?:^|\/)docs\/engineering-discipline\/plans\/[^/\s"'`<>),]+\.md$/i;
 const GENERIC_PLAN_PATH_RE = /(?:^|\/)(?:plans|plan)\/[^/\s"'`<>),]+\.md$/i;

@@ -1194,6 +1194,7 @@ Do not start multi-step implementation without a clear understanding of what the
       "\n\n## Active Workflow: Active Goal",
       "You are working under the durable /goal runtime.",
       "- Use /goal status to inspect the active goal or subgoal before deciding next work.",
+      "- When the user runs /goal without naming a target, continue the entire active goal across subgoals until the goal itself receives verifier PASS.",
       "- Use todoread before todo status changes and todowrite immediately after task progress.",
       "- Maintain the evidence ledger with /goal evidence before requesting completion.",
       "- Completion requires verifier PASS; never claim the goal or subgoal is complete before that receipt exists.",
@@ -1673,21 +1674,28 @@ Do not start multi-step implementation without a clear understanding of what the
   const buildGoalAutoPrompt = (state: GoalState): string => {
     const goal = activeOrRunnableGoal(state);
     const activeSubgoal = goal?.subgoals.find((subgoal) => subgoal.id === goal.activeSubgoalId || subgoal.status === "active" || subgoal.status === "blocked");
-    const target = activeSubgoal ?? goal;
-    const targetLabel = activeSubgoal ? `${activeSubgoal.id} (${activeSubgoal.title})` : goal ? `${goal.id} (${goal.title})` : "the current goal";
+    const goalLabel = goal ? `${goal.id} (${goal.title})` : "the current goal";
+    const activeSubgoalLines = activeSubgoal ? [
+      `Current active subgoal: ${activeSubgoal.id} (${activeSubgoal.title})`,
+      `Current subgoal objective: ${activeSubgoal.objective}`,
+      "",
+    ] : [];
     return [
-      "Continue the durable /goal runtime automatically.",
+      "Continue the durable /goal runtime automatically until the entire active goal is complete.",
       "",
-      `Target: ${targetLabel}`,
-      target ? `Objective: ${target.objective}` : "Objective: inspect /goal status and infer the active target.",
+      `Goal: ${goalLabel}`,
+      goal ? `Goal objective: ${goal.objective}` : "Goal objective: inspect /goal status and infer the active goal.",
       "",
-      "Work until verifier PASS:",
+      ...activeSubgoalLines,
+      "Work until the entire active goal receives verifier PASS:",
       "1. Inspect /goal status.",
-      "2. Implement the active goal or subgoal.",
-      "3. Record concrete evidence with /goal evidence <targetId> <evidence>.",
-      "4. Request completion with /goal complete <targetId>.",
+      "2. Implement the current active subgoal if one exists; otherwise implement the active goal.",
+      "3. Record concrete evidence with /goal evidence <targetId> <evidence> for the current target.",
+      "4. Request completion with /goal complete <targetId> for the current target.",
       "5. If reviewer-verifier returns FAIL, address blockers, add new evidence, and request completion again.",
-      "6. Stop only when reviewer-verifier returns PASS or user intervention is genuinely required.",
+      "6. If a subgoal receives PASS and /goal advances to another active subgoal, continue automatically with the next active subgoal.",
+      "7. After all subgoals receive PASS, request completion for the active goal itself.",
+      "8. Stop only when the entire active goal receives reviewer-verifier PASS or user intervention is genuinely required.",
     ].join("\n");
   };
   const autoStartGoalRuntime = async (ctx: any, initialState: GoalState): Promise<GoalState> => {

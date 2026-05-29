@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
+import { fileURLToPath } from "url";
 import { parseFrontmatter, loadAgentsFromDir } from "../agents.js";
 
 describe("parseFrontmatter", () => {
@@ -165,5 +166,18 @@ describe("loadAgentsFromDir", () => {
   it("should return empty array for non-existent directory", async () => {
     const agents = await loadAgentsFromDir("/tmp/nonexistent-dir-xyz", "user");
     expect(agents).toEqual([]);
+  });
+
+  it("bundled agents exclude removed milestone-planning-only agents", async () => {
+    const bundledDir = fileURLToPath(new URL("../agents/", import.meta.url));
+    const agents = await loadAgentsFromDir(bundledDir, "bundled");
+    const names = agents.map((agent) => agent.name).sort();
+
+    expect(names).toContain("reviewer-feasibility");
+    expect(names).toContain("reviewer-architecture");
+    expect(names).toContain("reviewer-risk");
+    expect(names).not.toContain("synthesis");
+    expect(names).not.toContain("reviewer-dependency");
+    expect(names).not.toContain("reviewer-user-value");
   });
 });

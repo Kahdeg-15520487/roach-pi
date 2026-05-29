@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ROACH PI — Power Tools</title>
-  <meta name="description" content="Developer deep-dive into ROACH PI power tools: WebFetch, Editor Stash, Artifacts, Lore Commits, Welcome Banner, and Plan Progress.">
+  <meta name="description" content="Developer deep-dive into ROACH PI power tools: WebFetch, Editor Stash, Artifacts, Lore Commits, Welcome Banner, and Goal Progress.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪳</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -60,7 +60,7 @@
         <li><a href="#artifacts">Artifacts</a></li>
         <li><a href="#lore-commits">Lore Commits</a></li>
         <li><a href="#welcome-banner">Welcome Banner</a></li>
-        <li><a href="#plan-progress">Plan Progress</a></li>
+        <li><a href="#goal-progress">Goal Progress</a></li>
       </ul>
     </div>
 
@@ -72,8 +72,8 @@
         <span data-lang="ko">파워 툴즈</span>
       </h1>
       <p>
-        <span data-lang="en">Six focused features that extend the pi agent's capabilities — URL fetching, editor state management, artifact persistence, structured commit metadata, branded startup, and real-time plan tracking.</span>
-        <span data-lang="ko">pi 에이전트의 기능을 확장하는 6개의 집중 기능 — URL 가져오기, 에디터 상태 관리, 아티팩트 지속성, 구조화된 커밋 메타데이터, 브랜디드 시작 화면, 실시간 계획 추적.</span>
+        <span data-lang="en">Six focused features that extend the pi agent's capabilities — URL fetching, editor state management, artifact persistence, structured commit metadata, branded startup, and real-time goal/todo tracking.</span>
+        <span data-lang="ko">pi 에이전트의 기능을 확장하는 6개의 집중 기능 — URL 가져오기, 에디터 상태 관리, 아티팩트 지속성, 구조화된 커밋 메타데이터, 브랜디드 시작 화면, 실시간 목표/할 일 추적.</span>
       </p>
 
       <!-- ======================== WebFetch ======================== -->
@@ -513,20 +513,20 @@
         </p>
       </div>
 
-      <!-- ======================== Plan Progress ======================== -->
-      <div class="doc-subsection" id="plan-progress">
+      <!-- ======================== Goal Progress ======================== -->
+      <div class="doc-subsection" id="goal-progress">
         <h2>
-          <span class="icon">◐</span> Plan Progress & Milestone TUI
+          <span class="icon">◐</span> Goal & Todo Progress
         </h2>
 
         <p>
-          <span data-lang="en">Real-time plan and milestone progress displayed in the TUI footer. Shows task completion, running state, and milestone lifecycle at a glance.</span>
-          <span data-lang="ko">TUI 푸터에 표시되는 실시간 계획 및 마일스톤 진행 상황. 작업 완료, 실행 상태, 마일스톤 수명 주기를 한눈에 보여줍니다.</span>
+          <span data-lang="en">Real-time goal, subgoal, evidence, and todo state displayed in the TUI footer. The footer reflects the durable <code>/goal</code> runtime and structured todo ledger rather than parsing legacy files.</span>
+          <span data-lang="ko">TUI 푸터에 표시되는 실시간 목표, 하위 목표, 증거, 할 일 상태입니다. 푸터는 레거시 파일을 파싱하지 않고 지속형 <code>/goal</code> 런타임과 구조화된 할 일 원장을 반영합니다.</span>
         </p>
 
         <h3>
-          <span data-lang="en">Task Statuses</span>
-          <span data-lang="ko">작업 상태</span>
+          <span data-lang="en">Todo Statuses</span>
+          <span data-lang="ko">할 일 상태</span>
         </h3>
         <table class="doc-table">
           <thead>
@@ -537,81 +537,28 @@
           </thead>
           <tbody>
             <tr><td><code>pending</code></td><td><span data-lang="en">Not yet started</span><span data-lang="ko">아직 시작 안 됨</span></td></tr>
-            <tr><td><code>running</code></td><td><span data-lang="en">Currently executing</span><span data-lang="ko">현재 실행 중</span></td></tr>
+            <tr><td><code>in_progress</code></td><td><span data-lang="en">Currently executing</span><span data-lang="ko">현재 실행 중</span></td></tr>
             <tr><td><code>completed</code></td><td><span data-lang="en">Finished successfully</span><span data-lang="ko">성공적으로 완료</span></td></tr>
-            <tr><td><code>failed</code></td><td><span data-lang="en">Finished with error</span><span data-lang="ko">오류로 완료</span></td></tr>
+            <tr><td><code>cancelled</code></td><td><span data-lang="en">Explicitly cancelled</span><span data-lang="ko">명시적으로 취소됨</span></td></tr>
           </tbody>
         </table>
 
         <h3>
-          <span data-lang="en">Milestone Statuses</span>
-          <span data-lang="ko">마일스톤 상태</span>
-        </h3>
-        <table class="doc-table">
-          <thead>
-            <tr>
-              <th><span data-lang="en">Status</span><span data-lang="ko">상태</span></th>
-              <th><span data-lang="en">Meaning</span><span data-lang="ko">의미</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td><code>pending</code></td><td><span data-lang="en">Waiting to start</span><span data-lang="ko">시작 대기 중</span></td></tr>
-            <tr><td><code>planning</code></td><td><span data-lang="en">Plan being drafted</span><span data-lang="ko">계획 작성 중</span></td></tr>
-            <tr><td><code>executing</code></td><td><span data-lang="en">Tasks running</span><span data-lang="ko">작업 실행 중</span></td></tr>
-            <tr><td><code>validating</code></td><td><span data-lang="en">Review underway</span><span data-lang="ko">리뷰 진행 중</span></td></tr>
-            <tr><td><code>completed</code></td><td><span data-lang="en">All tasks passed</span><span data-lang="ko">모든 작업 통과</span></td></tr>
-            <tr><td><code>failed</code></td><td><span data-lang="en">Validation failed</span><span data-lang="ko">검증 실패</span></td></tr>
-            <tr><td><code>skipped</code></td><td><span data-lang="en">Explicitly skipped</span><span data-lang="ko">명시적으로 건너뜀</span></td></tr>
-          </tbody>
-        </table>
-
-        <h3>
-          <span data-lang="en">Spinner</span>
-          <span data-lang="ko">스피너</span>
+          <span data-lang="en">Goal Runtime State</span>
+          <span data-lang="ko">목표 런타임 상태</span>
         </h3>
         <p>
-          <span data-lang="en">A <strong>400ms interval</strong> spinner (<code>PLAN_PROGRESS_SPINNER_MS</code>) runs only while tasks are in the <code>running</code> state. Frames cycle through <code>◐ ◓ ◑ ◒</code>.</span>
-          <span data-lang="ko">작업이 <code>running</code> 상태인 동안만 <strong>400ms 간격</strong> 스피너(<code>PLAN_PROGRESS_SPINNER_MS</code>)가 실행됩니다. 프레임은 <code>◐ ◓ ◑ ◒</code>을 순환합니다.</span>
+          <span data-lang="en"><code>/goal</code> tracks active goals, active subgoals, evidence, blockers, and verifier receipts. The footer renders this structured state directly so progress survives compaction and session replay.</span>
+          <span data-lang="ko"><code>/goal</code>은 활성 목표, 활성 하위 목표, 증거, 차단 요소, 검증 영수증을 추적합니다. 푸터는 이 구조화된 상태를 직접 렌더링하므로 컴팩션과 세션 리플레이 이후에도 진행 상황이 유지됩니다.</span>
         </p>
-
-        <h3>
-          <span data-lang="en">Milestone File Detection</span>
-          <span data-lang="ko">마일스톤 파일 감지</span>
-        </h3>
-        <table class="doc-table">
-          <thead>
-            <tr>
-              <th><span data-lang="en">File Type</span><span data-lang="ko">파일 유형</span></th>
-              <th><span data-lang="en">Pattern</span><span data-lang="ko">패턴</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><span data-lang="en">Milestone file</span><span data-lang="ko">마일스톤 파일</span></td>
-              <td><code>/(M\d+)-([^/\s]+)\.md$/i</code></td>
-            </tr>
-            <tr>
-              <td><span data-lang="en">State table</span><span data-lang="ko">상태 테이블</span></td>
-              <td><code>/state.md$/</code></td>
-            </tr>
-            <tr>
-              <td><span data-lang="en">Todo</span><span data-lang="ko">할 일</span></td>
-              <td><code>/todo.md$/</code></td>
-            </tr>
-            <tr>
-              <td><span data-lang="en">Completion</span><span data-lang="ko">완료</span></td>
-              <td><code>/completion.md$/</code></td>
-            </tr>
-          </tbody>
-        </table>
 
         <h3>
           <span data-lang="en"><code>/reset-phase</code> Command</span>
           <span data-lang="ko"><code>/reset-phase</code> 명령</span>
         </h3>
         <p>
-          <span data-lang="en">Clears all plan and milestone state from the tracker, returning to a clean slate.</span>
-          <span data-lang="ko">트래커에서 모든 계획 및 마일스톤 상태를 지우고 깨끗한 상태로 돌아갑니다.</span>
+          <span data-lang="en">Resets the transient workflow phase when the UI needs a clean active-state display.</span>
+          <span data-lang="ko">UI가 깨끗한 활성 상태 표시를 필요로 할 때 임시 워크플로 단계를 재설정합니다.</span>
         </p>
 
         <h3>
@@ -619,8 +566,8 @@
           <span data-lang="ko">푸터 통합</span>
         </h3>
         <p>
-          <span data-lang="en">The footer subscribes to <code>PlanProgressTracker</code> change notifications via <code>setOnChange()</code>. When progress changes, the footer calls <code>tui.requestRender(true)</code> to update the display. The spinner timer is started on demand and cleaned up in <code>dispose()</code>.</span>
-          <span data-lang="ko">푸터는 <code>setOnChange()</code>을 통해 <code>PlanProgressTracker</code> 변경 알림을 구독합니다. 진행 상황이 변경되면 푸터는 <code>tui.requestRender(true)</code>를 호출하여 표시를 업데이트합니다. 스피너 타이머는 필요할 때 시작되고 <code>dispose()</code>에서 정리됩니다.</span>
+          <span data-lang="en">The footer reads structured goal and todo state, then refreshes when tool calls or session replay update that state.</span>
+          <span data-lang="ko">푸터는 구조화된 목표 및 할 일 상태를 읽고, 도구 호출이나 세션 리플레이가 상태를 갱신하면 다시 렌더링합니다.</span>
         </p>
       </div>
 

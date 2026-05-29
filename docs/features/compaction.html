@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Compaction — ROACH PI</title>
-  <meta name="description" content="Deep-dive into ROACH PI context management: phase-aware compaction, microcompaction, and plan execution interaction.">
+  <meta name="description" content="Deep-dive into ROACH PI context management: phase-aware compaction, microcompaction, and goal runtime interaction.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪳</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -61,7 +61,7 @@
         <li><a href="#workflow-phases"><span data-lang="en">Workflow Phases</span><span data-lang="ko">워크플로 단계</span></a></li>
         <li><a href="#microcompaction"><span data-lang="en">Microcompaction</span><span data-lang="ko">마이크로컴팩션</span></a></li>
         <li><a href="#configuration"><span data-lang="en">Configuration</span><span data-lang="ko">설정</span></a></li>
-        <li><a href="#plan-execution"><span data-lang="en">Plan Execution</span><span data-lang="ko">계획 실행</span></a></li>
+        <li><a href="#goal-runtime"><span data-lang="en">Goal Runtime</span><span data-lang="ko">목표 런타임</span></a></li>
       </ul>
     </aside>
 
@@ -239,10 +239,10 @@ CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
           </tbody>
         </table>
         <p data-lang="en">
-          Each non-idle phase injects additional instructions into the compaction prompt, emphasizing what the model must preserve. For example, during <code>planning</code>, the prompt requires the summary to capture task progress, implementation decisions, and the current task state.
+          Each non-idle phase injects additional instructions into the compaction prompt, emphasizing what the model must preserve. For example, during <code>goal_active</code>, the prompt requires the summary to capture active goal context, evidence, blockers, and current subgoal state.
         </p>
         <p data-lang="ko">
-          각 비유휴(non-idle) 단계는 컴팩션 프롬프트에 추가 지시문을 주입하여 모델이 보존해야 할 내용을 강조합니다. 예를 들어, <code>planning</code> 중에는 프롬프트가 요약에 작업 진행 상황, 구현 결정, 현재 작업 상태를 포함하도록 요구합니다.
+          각 비유휴(non-idle) 단계는 컴팩션 프롬프트에 추가 지시문을 주입하여 모델이 보존해야 할 내용을 강조합니다. 예를 들어, <code>goal_active</code> 중에는 프롬프트가 활성 목표 컨텍스트, 증거, 차단 요소, 현재 하위 목표 상태를 포함하도록 요구합니다.
         </p>
       </section>
 
@@ -304,16 +304,16 @@ CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
         </table>
       </section>
 
-      <!-- Plan Execution -->
-      <section class="doc-section" id="plan-execution">
+      <!-- Goal Runtime -->
+      <section class="doc-section" id="goal-runtime">
         <h2>
-          <span data-lang="en">Plan Execution Interaction</span><span data-lang="ko">계획 실행과의 상호작용</span>
+          <span data-lang="en">Goal Runtime Interaction</span><span data-lang="ko">목표 런타임과의 상호작용</span>
         </h2>
         <p data-lang="en">
-          During plan execution (<code>plan-compliance</code>, <code>plan-worker</code>, <code>plan-validator</code>), the workflow phase and goal document are critical for continuity. If a compaction occurs mid-execution:
+          During durable goal execution, the active goal, current subgoal, evidence ledger, and verifier receipts are critical for continuity. If a compaction occurs mid-execution:
         </p>
         <p data-lang="ko">
-          계획 실행 중(<code>plan-compliance</code>, <code>plan-worker</code>, <code>plan-validator</code>), 워크플로 단계와 목표 문서는 연속성에 중요합니다. 실행 중 컴팩션이 발생하면:
+          지속형 목표 실행 중에는 활성 목표, 현재 하위 목표, 증거 원장, 검증 영수증이 연속성에 중요합니다. 실행 중 컴팩션이 발생하면:
         </p>
         <ul>
           <li>

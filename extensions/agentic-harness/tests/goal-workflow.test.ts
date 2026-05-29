@@ -127,7 +127,14 @@ describe("clarify to goal workflow", () => {
         evidenceRequired: ["goal workflow tests pass"],
       });
       expect(state.goals[0].subgoals).toHaveLength(2);
-      expect(mockPi.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("Work until verifier PASS"), { deliverAs: "followUp" });
+      const autoPrompt = mockPi.sendUserMessage.mock.calls[0][0];
+      expect(autoPrompt).toContain("until the entire active goal is complete");
+      expect(autoPrompt).toContain("Goal: goal-1 (Ship automatic goal runtime)");
+      expect(autoPrompt).toContain("Current active subgoal: subgoal-1 (Implement auto start)");
+      expect(autoPrompt).toContain("Work until the entire active goal receives verifier PASS");
+      expect(autoPrompt).toContain("If a subgoal receives PASS and /goal advances to another active subgoal, continue automatically");
+      expect(autoPrompt).toContain("After all subgoals receive PASS, request completion for the active goal itself");
+      expect(autoPrompt).toContain("Stop only when the entire active goal receives reviewer-verifier PASS");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

@@ -145,12 +145,6 @@ export function showingFooter(theme: Theme, shown: number, total: number, label:
   );
 }
 
-export function trimTrailingEmptyLines(lines: string[]): string[] {
-  let end = lines.length;
-  while (end > 0 && lines[end - 1] === "") end--;
-  return lines.slice(0, end);
-}
-
 function formatKeys(keys: string[]): string {
   if (keys.length === 0) return "";
   if (keys.length === 1) return keys[0]!;

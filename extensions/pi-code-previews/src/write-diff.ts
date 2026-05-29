@@ -81,10 +81,6 @@ export function shouldSkipWriteDiffBytes(...texts: string[]): boolean {
   return false;
 }
 
-export function getMaxWriteDiffBytes(): number {
-  return MAX_WRITE_DIFF_BYTES;
-}
-
 export function resolvePreviewPath(path: string, cwd: string): string {
   let expanded = path.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, " ");
   if (expanded === "~") expanded = homedir();
