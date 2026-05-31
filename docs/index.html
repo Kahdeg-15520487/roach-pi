@@ -108,16 +108,19 @@
               <span class="terminal-dot red"></span>
               <span class="terminal-dot yellow"></span>
               <span class="terminal-dot green"></span>
-              <span class="terminal-tag">ROACH · PI</span>
+              <span class="terminal-tag">ROACH PI</span>
             </div>
             <div class="terminal-body">
 <pre class="hero-ascii">
- ██████╗ ███████╗████████╗██████╗  ██████╗     ██████╗ ██╗   ██╗███████╗██████╗
- ██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔═══██╗    ██╔══██╗╚██╗ ██╔╝██╔════╝██╔══██╗
- ██████╔╝█████╗     ██║   ██████╔╝██║   ██║    ██████╔╝ ╚████╔╝ █████╗  ██████╔╝
- ██╔══██╗██╔══╝     ██║   ██╔══██╗██║   ██║    ██╔══██╗  ╚██╔╝  ██╔══╝  ██╔══██╗
- ██████╔╝███████╗   ██║   ██║  ██║╚██████╔╝    ██████╔╝   ██║   ███████╗██║  ██║
- ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝     ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
+  ____   ___    _    ____ _   _   ____ ___
+ |  _ \ / _ \  / \  / ___| | | | |  _ \_ _|
+ | |_) | | | |/ _ \| |   | |_| | | |_) | |
+ |  _ <| |_| / ___ \ |___|  _  | |  __/| |
+ |_| \_\\___/_/   \_\____|_| |_| |_|  |___|
+
+                  ROACH PI
+      Durable Goals | Multi-Agent | Verifier-Gated
+           /setup  /clarify  /goal  /loop
 </pre>
             </div>
           </div>
@@ -244,6 +247,96 @@
         익스텐션은 단순한 워크플로를 제공합니다: <strong>명확화 → goal</strong>. <code>/goal</code>이 자동으로 생성, 활성화, 이어가기, 검증을 진행합니다.
       </p>
 
+      <section class="workflow-video" id="workflow-video" aria-labelledby="workflow-video-title">
+        <div class="workflow-video__header">
+          <h3 id="workflow-video-title">
+            <span data-lang="en">Executable Workflow Video</span>
+            <span data-lang="ko">Executable Workflow Video</span>
+          </h3>
+          <p class="workflow-video__lede" data-lang="en">
+            Live-style runtime preview showing command execution order, verifier gates, and evidence checkpoints.
+          </p>
+          <p class="workflow-video__lede" data-lang="ko">
+            Live-style runtime preview showing command execution order, verifier gates, and evidence checkpoints.
+          </p>
+        </div>
+
+        <div class="workflow-video__viewport" aria-labelledby="workflow-video-title workflow-video-alt">
+          <div class="workflow-video__screen">
+            <video
+              class="workflow-video__media"
+              controls
+              muted
+              playsinline
+              preload="metadata"
+              aria-label="ROACH PI command workflow showing setup clarify goal subgoal and loop verification states"
+            >
+              <source src="assets/workflow-command-video.mp4" type="video/mp4">
+              Your browser does not support the workflow video. See the transcript below for the full command sequence.
+            </video>
+            <p id="workflow-video-alt" class="workflow-video__alt">
+              Recorded terminal workflow showing command execution order, evidence receipts, checkpoint updates, and verifier pass status.
+            </p>
+          </div>
+
+          <div class="workflow-video__cue">
+            <div class="workflow-video__timeline" aria-hidden="true">
+              <span class="workflow-video__timeline-label">timeline 00:00 - 02:15</span>
+              <div class="workflow-video__timeline-track">
+                <span class="workflow-video__timeline-progress"></span>
+              </div>
+            </div>
+
+            <ol class="workflow-video__frames" aria-label="Workflow execution frames">
+              <li class="workflow-video__frame is-done">
+                <div class="workflow-video__meta">
+                  <span class="workflow-video__stamp">00:05</span>
+                  <span class="workflow-video__state">done</span>
+                </div>
+                <p><code>/setup</code> bootstraps defaults and applies quiet startup settings.</p>
+              </li>
+              <li class="workflow-video__frame is-done">
+                <div class="workflow-video__meta">
+                  <span class="workflow-video__stamp">00:28</span>
+                  <span class="workflow-video__state">done</span>
+                </div>
+                <p><code>/clarify</code> resolves ambiguity and emits the Goal Contract.</p>
+              </li>
+              <li class="workflow-video__frame is-done">
+                <div class="workflow-video__meta">
+                  <span class="workflow-video__stamp">00:53</span>
+                  <span class="workflow-video__state">done</span>
+                </div>
+                <p><code>/goal</code> starts durable execution and tracks evidence receipts.</p>
+              </li>
+              <li class="workflow-video__frame is-done">
+                <div class="workflow-video__meta">
+                  <span class="workflow-video__stamp">01:24</span>
+                  <span class="workflow-video__state">done</span>
+                </div>
+                <p><code>/goal subgoal</code> queues dependency-bound work packets.</p>
+              </li>
+              <li class="workflow-video__frame is-active">
+                <div class="workflow-video__meta">
+                  <span class="workflow-video__stamp">02:15</span>
+                  <span class="workflow-video__state">verifying</span>
+                </div>
+                <p><code>/loop</code> schedules recurring checks while verifier waits for PASS.</p>
+              </li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="workflow-video__transcript">
+          <h4>
+            <span data-lang="en">Transcript</span>
+            <span data-lang="ko">Transcript</span>
+          </h4>
+          <p data-lang="en">00:05 /setup -> bootstrap complete. 00:28 /clarify -> goal contract locked. 00:53 /goal -> runtime active. 01:24 /goal subgoal -> queue accepted. 02:15 /loop -> verifier PASS pending.</p>
+          <p data-lang="ko">00:05 /setup -> bootstrap complete. 00:28 /clarify -> goal contract locked. 00:53 /goal -> runtime active. 01:24 /goal subgoal -> queue accepted. 02:15 /loop -> verifier PASS pending.</p>
+        </div>
+      </section>
+
       <ol class="step-list">
 
         <li class="step">
@@ -269,10 +362,10 @@
             <span data-lang="ko"> — 모호성 해결</span>
           </h3>
           <p class="step-desc" data-lang="en">
-            The agent asks dynamic, context-aware questions one at a time while exploring the codebase in parallel. Ends with a structured <strong>Goal Contract</strong> that defines scope, constraints, success criteria, and evidence requirements.
+            The agent asks dynamic, context-aware questions one at a time, using codebase exploration only when implementation or uncertain technical context makes it necessary. Ends with a structured <strong>Goal Contract</strong> that defines scope, constraints, success criteria, and evidence requirements.
           </p>
           <p class="step-desc" data-lang="ko">
-            에이전트가 코드베이스를 병렬로 탐색하면서 동적이고 문맥에 맞는 질문을 하나씩 묻습니다. 범위, 제약, 성공 기준, 증거 요구사항을 정의하는 구조화된 <strong>Goal Contract</strong>로 끝납니다.
+            에이전트가 동적이고 문맥에 맞는 질문을 하나씩 묻고, 구현이나 불확실한 기술 맥락 때문에 필요할 때만 코드베이스를 탐색합니다. 범위, 제약, 성공 기준, 증거 요구사항을 정의하는 구조화된 <strong>Goal Contract</strong>로 끝납니다.
           </p>
         </li>
 
@@ -642,3 +735,4 @@
 
 </body>
 </html>
+
