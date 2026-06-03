@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.36.0](https://github.com/tmdgusya/roach-pi/compare/v1.35.0...v1.36.0) (2026-06-03)
+
+### Features
+
+* compact tool output rendering ([ff4a43a](https://github.com/tmdgusya/roach-pi/commit/ff4a43a056b1961a074a0531bd7d43e9aa1ad923))
+
 ## [1.35.0](https://github.com/tmdgusya/roach-pi/compare/v1.34.0...v1.35.0) (2026-05-31)
 
 ### Features
