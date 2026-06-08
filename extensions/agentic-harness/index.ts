@@ -354,10 +354,32 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  const AskUserQuestionParams = Type.Object({
+  const QuestionItem = Type.Object({
     question: Type.String({
-      description: "The question to ask the user. The agent generates this dynamically based on context.",
+      description: "The question to ask the user.",
     }),
+    choices: Type.Optional(
+      Type.Array(Type.String(), {
+        description:
+          "Multiple choice options. 'Enter custom response' is auto-appended. Omit for free-text input.",
+      })
+    ),
+    placeholder: Type.Optional(
+      Type.String({
+        description: "Placeholder hint for free-text input mode.",
+      })
+    ),
+    defaultValue: Type.Optional(
+      Type.String({
+        description: "Default value if user presses Enter without typing.",
+      })
+    ),
+  });
+
+  const AskUserQuestionParams = Type.Object({
+    question: Type.Optional(Type.String({
+      description: "The question to ask the user. The agent generates this dynamically based on context. Use this for a single question, or use 'questions' for multiple.",
+    })),
     choices: Type.Optional(
       Type.Array(Type.String(), {
         description:
@@ -374,7 +396,43 @@ export default function (pi: ExtensionAPI) {
         description: "Default value if user presses Enter without typing.",
       })
     ),
+    questions: Type.Optional(
+      Type.Array(QuestionItem, {
+        description:
+          "Array of questions to ask in sequence within a single tool call. Each item has its own question, choices, placeholder, and defaultValue. Use this to batch multiple related questions.",
+      })
+    ),
   });
+
+  // Helper to ask a single question via UI and return the answer.
+  const askSingleQuestion = async (
+    q: { question: string; choices?: string[]; placeholder?: string; defaultValue?: string },
+    signal: AbortSignal | undefined,
+    ctx: any,
+  ): Promise<string | undefined> => {
+    const { question, choices, placeholder, defaultValue } = q;
+    let answer: string | undefined;
+
+    if (choices && choices.length > 0) {
+      const withDirect = choices.includes(DIRECT_INPUT_OPTION)
+        ? choices
+        : [...choices, DIRECT_INPUT_OPTION];
+
+      answer = await ctx.ui.select(question, withDirect, { signal });
+
+      if (answer === DIRECT_INPUT_OPTION) {
+        answer = await ctx.ui.input(question, placeholder || defaultValue, {
+          signal,
+        });
+      }
+    } else {
+      answer = await ctx.ui.input(question, placeholder || defaultValue, {
+        signal,
+      });
+    }
+
+    return answer;
+  };
 
   // ask_user_question is only available to the root session. Subagent
   // processes must not be able to call it — otherwise a subagent ends up
@@ -385,39 +443,54 @@ export default function (pi: ExtensionAPI) {
         name: "ask_user_question",
         label: "Ask User Question",
         description:
-          "Ask the user a question when the agent needs clarification. The agent composes the question and optional choices dynamically. Returns the user's answer as text.",
+          "Ask the user a question when the agent needs clarification. The agent composes the question and optional choices dynamically. Returns the user's answer as text. Supports a single question or multiple questions in one call via the 'questions' array.",
         promptSnippet:
           "Ask the user a clarifying question with optional multiple-choice answers",
         promptGuidelines: [
           "Use ask_user_question whenever you encounter ambiguity, unclear scope, or need user preference.",
           "Generate the question and choices yourself based on the current context — do not rely on predefined templates.",
           "Offer concrete choices (A/B/C style) when the options are enumerable. Omit choices for open-ended questions.",
-          "Ask one focused question at a time. Do not bundle multiple questions.",
+          "Ask one focused question at a time, or use the 'questions' array to batch multiple related questions in a single call.",
           "After receiving an answer, decide whether further clarification is needed or proceed with the task.",
         ],
         parameters: AskUserQuestionParams,
         execute: async (toolCallId, params, signal, onUpdate, ctx) => {
-          const { question, choices, placeholder, defaultValue } = params;
+          const { question, choices, placeholder, defaultValue, questions } = params;
 
-          let answer: string | undefined;
+          // Multi-question mode: ask each question in sequence, collect all answers.
+          if (questions && questions.length > 0) {
+            const answers: { question: string; answer: string }[] = [];
 
-          if (choices && choices.length > 0) {
-            const withDirect = choices.includes(DIRECT_INPUT_OPTION)
-              ? choices
-              : [...choices, DIRECT_INPUT_OPTION];
-
-            answer = await ctx.ui.select(question, withDirect, { signal });
-
-            if (answer === DIRECT_INPUT_OPTION) {
-              answer = await ctx.ui.input(question, placeholder || defaultValue, {
-                signal,
-              });
+            for (const q of questions) {
+              const answer = await askSingleQuestion(q, signal, ctx);
+              if (answer === undefined) {
+                // User cancelled mid-sequence — return what we have so far + cancellation note.
+                answers.push({ question: q.question, answer: "[cancelled]" });
+                const result = answers.map((a) => `Q: ${a.question}\nA: ${a.answer}`).join("\n\n");
+                return {
+                  content: [{ type: "text", text: result + "\n\n(User cancelled — remaining questions skipped.)" }],
+                  details: undefined,
+                };
+              }
+              answers.push({ question: q.question, answer });
             }
-          } else {
-            answer = await ctx.ui.input(question, placeholder || defaultValue, {
-              signal,
-            });
+
+            const result = answers.map((a) => `Q: ${a.question}\nA: ${a.answer}`).join("\n\n");
+            return {
+              content: [{ type: "text", text: result }],
+              details: undefined,
+            };
           }
+
+          // Single-question mode (backward compatible).
+          if (!question) {
+            return {
+              content: [{ type: "text", text: "Error: either 'question' or 'questions' must be provided." }],
+              details: undefined,
+            };
+          }
+
+          const answer = await askSingleQuestion({ question, choices, placeholder, defaultValue }, signal, ctx);
 
           if (answer === undefined) {
             return {
