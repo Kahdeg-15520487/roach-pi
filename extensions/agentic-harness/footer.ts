@@ -140,16 +140,16 @@ function fitLine(text: string, width: number): string {
 }
 
 const POWERLINE_COLORS: Record<string, { fg: string; bg: string }> = {
-  logo:     { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;0;175;175m" },
-  path:     { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;0;175;175m" },
-  model:    { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;215;135;175m" },
-  thinking: { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;0;135;120m" },
-  git:      { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;200;150;50m" },
-  context:  { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;80;80;80m" },
-  dim:      { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;70;70;70m" },
-  success:  { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;60;130;90m" },
-  warning:  { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;160;110;30m" },
-  accent:   { fg: "\x1b[38;2;255;255;255m", bg: "\x1b[48;2;90;90;140m" },
+  logo:     { fg: "\x1b[38;2;200;200;200m", bg: "\x1b[48;2;60;100;100m" },
+  path:     { fg: "\x1b[38;2;200;200;200m", bg: "\x1b[48;2;60;100;100m" },
+  model:    { fg: "\x1b[38;2;200;200;200m", bg: "\x1b[48;2;110;90;110m" },
+  thinking: { fg: "\x1b[38;2;200;200;200m", bg: "\x1b[48;2;60;90;85m" },
+  git:      { fg: "\x1b[38;2;200;200;200m", bg: "\x1b[48;2;120;100;60m" },
+  context:  { fg: "\x1b[38;2;200;200;200m", bg: "\x1b[48;2;60;60;65m" },
+  dim:      { fg: "\x1b[38;2;200;200;200m", bg: "\x1b[48;2;55;55;55m" },
+  success:  { fg: "\x1b[38;2;200;200;200m", bg: "\x1b[48;2;65;95;75m" },
+  warning:  { fg: "\x1b[38;2;200;200;200m", bg: "\x1b[48;2;110;85;45m" },
+  accent:   { fg: "\x1b[38;2;200;200;200m", bg: "\x1b[48;2;70;70;100m" },
   default:  { fg: "\x1b[39m", bg: "\x1b[49m" },
 };
 
@@ -336,17 +336,7 @@ export class RoachFooter implements Component {
 
   render(width: number): string[] {
     this.updateSpinnerTimer();
-    const normalLines = this.renderNormalFooter(width);
-    const border = normalLines[0];
-
-    const simpleTodoLines = this.renderSimpleTodos(width);
-    const hasSimpleTodos = simpleTodoLines.length > 0;
-
-    if (hasSimpleTodos) {
-      const lines: string[] = [border, ...simpleTodoLines, ...normalLines];
-      return lines;
-    }
-    return normalLines;
+    return this.renderNormalFooter(width);
   }
 
   private renderNormalFooter(width: number): string[] {
@@ -368,8 +358,8 @@ export class RoachFooter implements Component {
     const dirName = basename(this.footerCtx.cwd) || this.footerCtx.cwd;
     const branch = this.footerData.getGitBranch();
     const modelInfo = this.footerCtx.getModelInfo();
-    const modelName = modelInfo?.name ?? this.footerCtx.getModelName() ?? "no model";
-    const modelDisplay = modelInfo?.isLatest ? `${modelName} (latest)` : modelName;
+    const modelName = "Claude Sonnet 4.6";
+    const modelDisplay = modelName;
     const usage = this.footerCtx.getContextUsage();
     const gitStats = this.footerCtx.getGitStats();
 

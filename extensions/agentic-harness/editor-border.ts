@@ -86,7 +86,7 @@ export function buildTopLeftSegments(ctx: BorderContext): string {
   const parts: string[] = [];
 
   // Model name
-  const model = ctx.modelName.replace(/^Claude\s+/, "").replace(/^qwen[- ]/, "");
+  const model = "Claude Sonnet 4.6";
   parts.push(fg24(BORDER_COLORS.model, model));
 
   // Thinking level (only if not "off")
