@@ -96,11 +96,8 @@ class WelcomeHeaderComponent implements Component {
   private readonly startedAt = Date.now();
 
   constructor(private readonly tui: Pick<TUI, "requestRender">, private readonly theme: WelcomeTheme) {
-    this.animating = canRenderShimmer(theme);
-    if (this.animating) {
-      this.timer = setInterval(() => this.tick(), WELCOME_SHIMMER_FRAME_MS);
-      this.timer.unref?.();
-    }
+    // Animation disabled — always render static banner.
+    this.animating = false;
   }
 
   dispose(): void {
