@@ -457,27 +457,34 @@ export default function (pi: ExtensionAPI) {
         execute: async (toolCallId, params, signal, onUpdate, ctx) => {
           const { question, choices, placeholder, defaultValue, questions } = params;
 
+          // Format a single Q&A entry, including choices if present.
+          const formatQA = (q: string, a: string, ch?: string[]): string => {
+            let out = `Q: ${q}`;
+            if (ch && ch.length > 0) {
+              out += `\nChoices: ${ch.join(" | ")}`;
+            }
+            out += `\nA: ${a}`;
+            return out;
+          };
+
           // Multi-question mode: ask each question in sequence, collect all answers.
           if (questions && questions.length > 0) {
-            const answers: { question: string; answer: string }[] = [];
+            const entries: string[] = [];
 
             for (const q of questions) {
               const answer = await askSingleQuestion(q, signal, ctx);
               if (answer === undefined) {
-                // User cancelled mid-sequence — return what we have so far + cancellation note.
-                answers.push({ question: q.question, answer: "[cancelled]" });
-                const result = answers.map((a) => `Q: ${a.question}\nA: ${a.answer}`).join("\n\n");
+                entries.push(formatQA(q.question, "[cancelled]", q.choices));
                 return {
-                  content: [{ type: "text", text: result + "\n\n(User cancelled — remaining questions skipped.)" }],
+                  content: [{ type: "text", text: entries.join("\n\n") + "\n\n(User cancelled — remaining questions skipped.)" }],
                   details: undefined,
                 };
               }
-              answers.push({ question: q.question, answer });
+              entries.push(formatQA(q.question, answer, q.choices));
             }
 
-            const result = answers.map((a) => `Q: ${a.question}\nA: ${a.answer}`).join("\n\n");
             return {
-              content: [{ type: "text", text: result }],
+              content: [{ type: "text", text: entries.join("\n\n") }],
               details: undefined,
             };
           }
@@ -494,13 +501,13 @@ export default function (pi: ExtensionAPI) {
 
           if (answer === undefined) {
             return {
-              content: [{ type: "text", text: `Q: ${question}\nA: [cancelled]\n\n(User cancelled the question.)` }],
+              content: [{ type: "text", text: formatQA(question, "[cancelled]", choices) + "\n\n(User cancelled the question.)" }],
               details: undefined,
             };
           }
 
           return {
-            content: [{ type: "text", text: `Q: ${question}\nA: ${answer}` }],
+            content: [{ type: "text", text: formatQA(question, answer, choices) }],
             details: undefined,
           };
         },
