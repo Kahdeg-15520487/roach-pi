@@ -494,13 +494,13 @@ export default function (pi: ExtensionAPI) {
 
           if (answer === undefined) {
             return {
-              content: [{ type: "text", text: "User cancelled the question." }],
+              content: [{ type: "text", text: `Q: ${question}\nA: [cancelled]\n\n(User cancelled the question.)` }],
               details: undefined,
             };
           }
 
           return {
-            content: [{ type: "text", text: answer }],
+            content: [{ type: "text", text: `Q: ${question}\nA: ${answer}` }],
             details: undefined,
           };
         },
