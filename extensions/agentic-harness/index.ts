@@ -461,7 +461,7 @@ export default function (pi: ExtensionAPI) {
           const formatQA = (q: string, a: string, ch?: string[]): string => {
             let out = `Q: ${q}`;
             if (ch && ch.length > 0) {
-              out += `\nChoices: ${ch.join(" | ")}`;
+              out += `\nChoices:\n${ch.map((c) => `\t- ${c}`).join("\n")}`;
             }
             out += `\nA: ${a}`;
             return out;
