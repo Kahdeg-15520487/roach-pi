@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.39.0](https://github.com/tmdgusya/roach-pi/compare/v1.38.0...v1.39.0) (2026-06-26)
+
+### Features
+
+* **footer:** PI_FPS painted-frame meter + render hot-path optimization ([af12609](https://github.com/tmdgusya/roach-pi/commit/af1260951231209cb927093dce65623b17a0d40f))
+
+### Performance
+
+* **ui:** smooth shimmer sampling (welcome banner + working message) ([4358829](https://github.com/tmdgusya/roach-pi/commit/43588297af551ed4afac86724859db3815ef6847))
+
 ## [1.38.0](https://github.com/tmdgusya/roach-pi/compare/v1.37.0...v1.38.0) (2026-06-07)
 
 ### Features
